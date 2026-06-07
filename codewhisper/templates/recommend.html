@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Discover Problems{% endblock %}
+
+{% block content %}
+<style>
+  .page-header { margin-bottom:1.75rem; }
+  .page-header h1 { font-size:1.5rem; font-weight:800; margin-bottom:.3rem; }
+  .page-header p  { color:var(--text-muted); font-size:.9rem; }
+
+  /* Controls */
+  .controls { display:flex; align-items:center; gap:1rem; margin-bottom:1.5rem; flex-wrap:wrap; }
+  .controls label { font-size:.85rem; color:var(--text-muted); font-weight:600; }
+  .controls select { width:auto; padding:.45rem .75rem; font-size:.88rem; background:var(--surface2); border:1px solid var(--border); color:var(--text); border-radius:var(--radius); }
+
+  /* Problem grid */
+  .problem-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:1.1rem; }
+
+  /* Problem card */
+  .problem-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:1.25rem 1.3rem; display:flex; flex-direction:column; gap:.65rem; transition:border-color .15s,transform .15s; }
+  .problem-card:hover { border-color:var(--accent); transform:translateY(-2px); }
+  .problem-header { display:flex; align-items:flex-start; justify-content:space-between; gap:.5rem; }
+  .problem-title  { font-weight:700; font-size:.97rem; line-height:1.3; }
+  .problem-source { font-size:.75rem; color:var(--text-muted); }
+  .problem-tags   { display:flex; flex-wrap:wrap; gap:.3rem; }
+  .problem-preview{ font-size:.83rem; color:var(--text-muted); line-height:1.5; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .problem-footer { display:flex; align-items:center; justify-content:space-between; margin-top:.25rem; }
+
+  .empty-state { text-align:center; padding:4rem 1rem; color:var(--text-muted); grid-column:1/-1; }
+  .empty-state h3 { margin-bottom:.5rem; }
+
+  .loading-grid { display:flex; align-items:center; gap:.5rem; color:var(--text-muted); }
+</style>
+
+<div class="page-header">
+  <h1>🔭 Discover Problems</h1>
+  <p>Personalized recommendations based on your learning history.</p>
+</div>
+
+<div class="controls">
+  <label>Show</label>
+  <select id="limit-select" onchange="loadRecommendations()">
+    <option value="5" selected>5 problems</option>
+    <option value="10">10 problems</option>
+    <option value="20">20 problems</option>
+  </select>
+  <button class="btn btn-secondary btn-sm" onclick="loadRecommendations()">🔄 Refresh</button>
+</div>
+
+<div id="problems-container">
+  <div class="loading-grid"><span class="spinner"></span> Loading recommendations…</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  if (!CW.requireAuth()) void 0;
+
+  function diffBadge(d) {
+    if (!d) return '';
+    const cls = d.toLowerCase();
+    return `<span class="badge badge-${cls}">${d}</span>`;
+  }
+
+  async function loadRecommendations() {
+    const limit = document.getElementById('limit-select').value;
+    const container = document.getElementById('problems-container');
+    container.innerHTML = '<div class="loading-grid"><span class="spinner"></span> Loading…</div>';
+
+    const { ok, data } = await CW.api('GET', `/recommend/problems?limit=${limit}`);
+
+    if (!ok) {
+      container.innerHTML = '<p style="color:var(--red);">Failed to load recommendations.</p>';
+      return;
+    }
+
+    const recs = data.recommendations || [];
+
+    if (recs.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <h3>No recommendations available</h3>
+          <p>Solve more problems to get personalized suggestions!</p>
+          <a href="/solve" class="btn btn-primary" style="margin-top:1rem;">Start solving</a>
+        </div>`;
+      return;
+    }
+
+    const cards = recs.map(p => {
+      const tags = (p.tags || []).map(t => `<span class="badge badge-tag">${t}</span>`).join('');
+      const preview = (p.statement_preview || '').replace(/</g,'&lt;');
+      const encodedStmt = encodeURIComponent(p.statement_preview || p.title || '');
+      return `
+        <div class="problem-card">
+          <div class="problem-header">
+            <span class="problem-title">${p.title || 'Untitled'}</span>
+            ${diffBadge(p.difficulty)}
+          </div>
+          <div class="problem-tags">${tags}</div>
+          ${preview ? `<div class="problem-preview">${preview}</div>` : ''}
+          <div class="problem-footer">
+            <span class="problem-source">${p.source || ''}</span>
+            <button class="btn btn-primary btn-sm" onclick="solveProblem(this, '${p.problem_id}', \`${(p.statement_preview||p.title||'').replace(/`/g,"'")}\`)">
+              ▶ Solve
+            </button>
+          </div>
+        </div>`;
+    }).join('');
+
+    container.innerHTML = `<div class="problem-grid">${cards}</div>`;
+  }
+
+  function solveProblem(btn, problemId, text) {
+    // Pre-fill the solve page textarea via sessionStorage and navigate
+    sessionStorage.setItem('cw_prefill', text);
+    window.location.href = '/solve';
+  }
+
+  loadRecommendations();
+</script>
+{% endblock %}

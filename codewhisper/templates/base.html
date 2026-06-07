@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}CodeWhisper{% endblock %} – AI Hint Engine</title>
+  <style>
+    /* ── Reset & Variables ──────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:        #0f1117;
+      --surface:   #1a1d27;
+      --surface2:  #22263a;
+      --border:    #2e3250;
+      --accent:    #6c63ff;
+      --accent2:   #9b5de5;
+      --green:     #22c55e;
+      --yellow:    #f59e0b;
+      --red:       #ef4444;
+      --text:      #e2e8f0;
+      --text-muted:#94a3b8;
+      --radius:    10px;
+      --shadow:    0 4px 24px rgba(0,0,0,.45);
+      --font:      'Segoe UI', system-ui, -apple-system, sans-serif;
+      --mono:      'Fira Code', 'Cascadia Code', monospace;
+    }
+
+    /* ── Base ───────────────────────────────────────────────────────────── */
+    html { font-size: 16px; scroll-behavior: smooth; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    button, .btn {
+      cursor: pointer;
+      border: none;
+      border-radius: var(--radius);
+      font-family: var(--font);
+      font-size: .9rem;
+      font-weight: 600;
+      padding: .6rem 1.2rem;
+      transition: opacity .15s, transform .1s;
+    }
+    button:hover, .btn:hover { opacity: .88; transform: translateY(-1px); }
+    button:active, .btn:active { transform: translateY(0); }
+
+    /* ── Navbar ─────────────────────────────────────────────────────────── */
+    nav {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: .85rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky; top: 0; z-index: 100;
+    }
+    .nav-brand {
+      font-size: 1.25rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: -.5px;
+    }
+    .nav-right { display: flex; align-items: center; gap: .75rem; }
+    .nav-username {
+      font-size: .85rem;
+      color: var(--text-muted);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: .3rem .85rem;
+    }
+    .btn-nav-link {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: .82rem;
+      padding: .35rem .85rem;
+    }
+    .btn-nav-link:hover { border-color: var(--accent); color: var(--text); }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+    .btn-success  { background: var(--green); color: #fff; }
+    .btn-danger   { background: var(--red); color: #fff; }
+    .btn-sm { padding: .35rem .75rem; font-size: .8rem; }
+    .btn-lg { padding: .8rem 1.8rem; font-size: 1rem; }
+
+    /* ── Main ───────────────────────────────────────────────────────────── */
+    main { flex: 1; padding: 2rem 1.5rem; max-width: 1100px; margin: 0 auto; width: 100%; }
+
+    /* ── Flash Messages ──────────────────────────────────────────────────── */
+    .flash-container { max-width: 1100px; margin: .75rem auto 0; padding: 0 1.5rem; }
+    .flash {
+      padding: .75rem 1.1rem;
+      border-radius: var(--radius);
+      margin-bottom: .5rem;
+      font-size: .9rem;
+      display: flex; align-items: center; gap: .5rem;
+    }
+    .flash-error   { background: rgba(239,68,68,.15);  border: 1px solid var(--red);   color: #fca5a5; }
+    .flash-success { background: rgba(34,197,94,.15);  border: 1px solid var(--green);  color: #86efac; }
+    .flash-info    { background: rgba(108,99,255,.15); border: 1px solid var(--accent); color: #a5b4fc; }
+
+    /* ── Cards ──────────────────────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+    }
+    .card-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      margin-bottom: .75rem;
+    }
+
+    /* ── Form Elements ──────────────────────────────────────────────────── */
+    .form-group { margin-bottom: 1.1rem; }
+    label { display: block; font-size: .85rem; color: var(--text-muted); margin-bottom: .35rem; font-weight: 600; }
+    input[type=text], input[type=email], input[type=password], textarea, select {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: var(--radius);
+      padding: .65rem .9rem;
+      font-size: .95rem;
+      font-family: var(--font);
+      outline: none;
+      transition: border-color .15s;
+    }
+    input:focus, textarea:focus, select:focus { border-color: var(--accent); }
+    textarea { resize: vertical; min-height: 130px; font-family: var(--mono); }
+    .form-error { font-size: .8rem; color: var(--red); margin-top: .3rem; }
+
+    /* ── Badge ──────────────────────────────────────────────────────────── */
+    .badge {
+      display: inline-block;
+      font-size: .72rem;
+      font-weight: 700;
+      padding: .15rem .5rem;
+      border-radius: 999px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .badge-easy   { background: rgba(34,197,94,.2);  color: var(--green);  border: 1px solid rgba(34,197,94,.4); }
+    .badge-medium { background: rgba(245,158,11,.2); color: var(--yellow); border: 1px solid rgba(245,158,11,.4); }
+    .badge-hard   { background: rgba(239,68,68,.2);  color: var(--red);    border: 1px solid rgba(239,68,68,.4); }
+    .badge-tag    { background: rgba(108,99,255,.15); color: #a5b4fc; border: 1px solid rgba(108,99,255,.3); margin: .15rem; }
+
+    /* ── Spinner ────────────────────────────────────────────────────────── */
+    .spinner {
+      display: inline-block;
+      width: 1.2rem; height: 1.2rem;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      vertical-align: middle; margin-right: .4rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Progress Bar ───────────────────────────────────────────────────── */
+    .progress-wrap { background: var(--surface2); border-radius: 999px; height: 8px; overflow: hidden; }
+    .progress-bar  { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width .4s ease; }
+
+    /* ── Table ──────────────────────────────────────────────────────────── */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+    thead th { padding: .65rem 1rem; text-align: left; color: var(--text-muted); font-size: .78rem; text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid var(--border); }
+    tbody td { padding: .7rem 1rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    tbody tr:hover { background: var(--surface2); }
+
+    /* ── Alert Box ──────────────────────────────────────────────────────── */
+    .alert {
+      padding: 1rem 1.25rem;
+      border-radius: var(--radius);
+      font-size: .9rem;
+      margin-bottom: 1rem;
+      display: flex; align-items: flex-start; gap: .6rem;
+    }
+    .alert-info { background: rgba(108,99,255,.12); border: 1px solid rgba(108,99,255,.3); color: #c7d2fe; }
+
+    /* ── Responsive ─────────────────────────────────────────────────────── */
+    @media(max-width: 640px) {
+      main { padding: 1.25rem .9rem; }
+      nav  { padding: .75rem .9rem; }
+      .nav-brand { font-size: 1.05rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Navbar ──────────────────────────────────────────────────────────── -->
+<nav>
+  <a href="/dashboard" class="nav-brand">🤫 CodeWhisper</a>
+  <div class="nav-right" id="nav-right">
+    <!-- Populated by JS based on localStorage token -->
+  </div>
+</nav>
+
+<!-- ── Flash Messages ─────────────────────────────────────────────────── -->
+<div class="flash-container" id="flash-container"></div>
+
+<!-- ── Page Content ───────────────────────────────────────────────────── -->
+<main>
+  {% block content %}{% endblock %}
+</main>
+
+<!-- ── Footer ─────────────────────────────────────────────────────────── -->
+<footer style="text-align:center;padding:1.2rem;font-size:.78rem;color:var(--text-muted);border-top:1px solid var(--border);">
+  CodeWhisper &mdash; Built to teach, not to tell &nbsp;🚀
+</footer>
+
+<!-- ── Shared JS ──────────────────────────────────────────────────────── -->
+<script>
+  /* ── Token helpers ────────────────────────────────────────────────── */
+  const CW = {
+    getToken:    () => localStorage.getItem('cw_token'),
+    getUser:     () => { try { return JSON.parse(localStorage.getItem('cw_user') || 'null'); } catch(e){return null;} },
+    setAuth:     (token, user) => { localStorage.setItem('cw_token', token); localStorage.setItem('cw_user', JSON.stringify(user)); },
+    clearAuth:   () => { localStorage.removeItem('cw_token'); localStorage.removeItem('cw_user'); },
+    isLoggedIn:  () => !!localStorage.getItem('cw_token'),
+
+    authHeaders: () => ({ 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + CW.getToken() }),
+
+    /* Generic fetch wrapper */
+    api: async (method, path, body) => {
+      const opts = { method, headers: CW.authHeaders() };
+      if (body) opts.body = JSON.stringify(body);
+      const resp = await fetch(path, opts);
+      const data = await resp.json();
+      return { ok: resp.ok, status: resp.status, data };
+    },
+
+    /* Flash a message */
+    flash: (msg, type = 'info') => {
+      const el = document.getElementById('flash-container');
+      const d  = document.createElement('div');
+      d.className = `flash flash-${type}`;
+      d.innerHTML = `<span>${type === 'error' ? '⚠️' : type === 'success' ? '✅' : 'ℹ️'}</span> ${msg}`;
+      el.prepend(d);
+      setTimeout(() => d.remove(), 5000);
+    },
+
+    /* Redirect to login if not authenticated */
+    requireAuth: () => {
+      if (!CW.isLoggedIn()) { window.location.href = '/'; return false; }
+      return true;
+    },
+  };
+
+  /* ── Render Navbar ────────────────────────────────────────────────── */
+  (function renderNav() {
+    const nr = document.getElementById('nav-right');
+    if (CW.isLoggedIn()) {
+      const u = CW.getUser();
+      nr.innerHTML = `
+        <a href="/dashboard" class="btn btn-nav-link">Dashboard</a>
+        <a href="/solve"     class="btn btn-nav-link">Solve</a>
+        <a href="/recommend" class="btn btn-nav-link">Discover</a>
+        <span class="nav-username">👤 ${u ? u.username : 'User'}</span>
+        <button class="btn btn-nav-link" onclick="CW.logout()">Logout</button>`;
+    } else {
+      nr.innerHTML = `
+        <a href="/"          class="btn btn-nav-link">Login</a>
+        <a href="/register"  class="btn btn-primary btn-sm">Sign up</a>`;
+    }
+  })();
+
+  /* ── Logout ───────────────────────────────────────────────────────── */
+  CW.logout = async () => {
+    try { await CW.api('POST', '/auth/logout'); } catch(e) {}
+    CW.clearAuth();
+    window.location.href = '/';
+  };
+</script>
+
+{% block scripts %}{% endblock %}
+</body>
+</html>

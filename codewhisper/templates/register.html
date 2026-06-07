@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Create Account{% endblock %}
+
+{% block content %}
+<style>
+  .auth-wrap { display:flex; justify-content:center; align-items:flex-start; padding-top:2.5rem; }
+  .auth-card { width:100%; max-width:440px; }
+  .auth-logo { text-align:center; margin-bottom:1.5rem; }
+  .auth-logo h1 { font-size:1.75rem; font-weight:900; background:linear-gradient(135deg,var(--accent),var(--accent2)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+  .auth-logo p  { color:var(--text-muted); font-size:.9rem; margin-top:.3rem; }
+  .auth-footer { text-align:center; margin-top:1.1rem; font-size:.88rem; color:var(--text-muted); }
+  .password-hint { font-size:.76rem; color:var(--text-muted); margin-top:.3rem; }
+</style>
+
+<div class="auth-wrap">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <h1>🤫 CodeWhisper</h1>
+      <p>Create your free account</p>
+    </div>
+
+    <div class="card">
+      <h2 style="font-size:1.2rem;margin-bottom:1.4rem;font-weight:700;">Get started</h2>
+
+      <form id="register-form">
+        <div class="form-group">
+          <label for="username">Username</label>
+          <input type="text" id="username" placeholder="alice_dev" required minlength="3" maxlength="100" autocomplete="username" />
+          <div class="form-error" id="username-err"></div>
+        </div>
+        <div class="form-group">
+          <label for="email">Email address</label>
+          <input type="email" id="email" placeholder="you@example.com" required autocomplete="email" />
+          <div class="form-error" id="email-err"></div>
+        </div>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" placeholder="Min. 8 characters" required minlength="8" autocomplete="new-password" />
+          <div class="password-hint">At least 8 characters.</div>
+          <div class="form-error" id="pass-err"></div>
+        </div>
+        <div class="form-error" id="form-err" style="margin-bottom:.75rem;"></div>
+        <button type="submit" class="btn btn-primary" style="width:100%;padding:.75rem;" id="reg-btn">
+          Create account
+        </button>
+      </form>
+    </div>
+
+    <div class="auth-footer">
+      Already have an account? <a href="/">Sign in</a>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  if (CW.isLoggedIn()) window.location.href = '/dashboard';
+
+  document.getElementById('register-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn      = document.getElementById('reg-btn');
+    const username = document.getElementById('username').value.trim();
+    const email    = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+
+    // Client-side validation
+    document.getElementById('form-err').textContent = '';
+    if (password.length < 8) {
+      document.getElementById('pass-err').textContent = 'Password must be at least 8 characters.';
+      return;
+    }
+    document.getElementById('pass-err').textContent = '';
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Creating account…';
+
+    const { ok, data } = await CW.api('POST', '/auth/register', { username, email, password });
+
+    if (ok) {
+      CW.setAuth(data.access_token, data.user);
+      CW.flash('Account created! Welcome to CodeWhisper 🎉', 'success');
+      window.location.href = '/dashboard';
+    } else {
+      document.getElementById('form-err').textContent = data.error || 'Registration failed.';
+      btn.disabled = false;
+      btn.textContent = 'Create account';
+    }
+  });
+</script>
+{% endblock %}

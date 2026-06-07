@@ -1,0 +1,94 @@
+"""
+CodeWhisper — Flask Application Factory
+Creates and fully configures the Flask app instance.
+
+Phase 7: Rate limiting (Flask-Limiter) wired in.
+"""
+
+import os
+from flask import Flask, jsonify
+from app.config import get_config
+from app.extensions import db, migrate, jwt, cors, limiter
+
+
+def create_app(config=None):
+    """
+    Application factory — creates a configured Flask app instance.
+
+    Args:
+        config: Optional config class override (useful in tests).
+
+    Returns:
+        Configured Flask application.
+    """
+    app = Flask(__name__, template_folder="../templates", static_folder="../static")
+
+    # ── Load Configuration ────────────────────────────────────────────────────
+    cfg = config if config is not None else get_config()
+    app.config.from_object(cfg)
+
+    # Flask-Limiter: always use memory:// so startup never fails.
+    # In production with Redis, change to the REDIS_URL value.
+    app.config.setdefault("RATELIMIT_STORAGE_URI", "memory://")
+    app.config["RATELIMIT_ENABLED"] = True
+
+    # ── Initialize Extensions ─────────────────────────────────────────────────
+    db.init_app(app)
+    migrate.init_app(app, db)
+    jwt.init_app(app)
+    cors.init_app(app, resources={r"/*": {"origins": app.config.get("CORS_ORIGINS", "*")}})
+    limiter.init_app(app)
+
+    # ── Import models so Flask-Migrate / SQLAlchemy can discover them ─────────
+    from app.models import User, Problem, UserProblemSession, HintLog  # noqa: F401
+
+    # ── Register Blueprints ───────────────────────────────────────────────────
+    from app.routes.auth      import auth_bp
+    from app.routes.hints     import hints_bp
+    from app.routes.progress  import progress_bp
+    from app.routes.recommend import recommend_bp
+    from app.routes.ui        import ui_bp
+
+    app.register_blueprint(auth_bp,      url_prefix="/auth")
+    app.register_blueprint(hints_bp,     url_prefix="/hints")
+    app.register_blueprint(progress_bp,  url_prefix="/progress")
+    app.register_blueprint(recommend_bp, url_prefix="/recommend")
+    app.register_blueprint(ui_bp)          # No prefix — serves at root /
+
+    # ── Global Error Handlers ─────────────────────────────────────────────────
+
+    @app.errorhandler(400)
+    def bad_request(e):
+        return jsonify({"error": "Bad request.", "detail": str(e)}), 400
+
+    @app.errorhandler(404)
+    def not_found(e):
+        return jsonify({"error": "Resource not found."}), 404
+
+    @app.errorhandler(405)
+    def method_not_allowed(e):
+        return jsonify({"error": "Method not allowed."}), 405
+
+    @app.errorhandler(429)
+    def rate_limited(e):
+        return jsonify({
+            "error": "Rate limit exceeded. Please slow down and try again later.",
+            "retry_after": getattr(e, "retry_after", None),
+        }), 429
+
+    @app.errorhandler(500)
+    def server_error(e):
+        return jsonify({"error": "Internal server error."}), 500
+
+    # ── Health Check ──────────────────────────────────────────────────────────
+
+    @app.route("/health", methods=["GET"])
+    def health():
+        """Lightweight liveness probe — no auth required."""
+        return jsonify({
+            "status":  "ok",
+            "app":     "CodeWhisper",
+            "version": "1.0.0",
+        }), 200
+
+    return app

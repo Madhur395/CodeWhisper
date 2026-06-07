@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>🤫 CodeWhisper — AI DSA Hint Engine</title>
+<style>
+/* ── Reset & Variables ─────────────────────────────────────────────────── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3250;
+  --accent:#6c63ff;--accent2:#9b5de5;--green:#22c55e;--yellow:#f59e0b;
+  --red:#ef4444;--text:#e2e8f0;--muted:#94a3b8;
+  --radius:10px;--font:'Segoe UI',system-ui,sans-serif;--mono:'Fira Code',monospace;
+}
+html{font-size:16px;scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;display:flex;flex-direction:column}
+a{color:var(--accent);text-decoration:none}
+
+/* ── Buttons ────────────────────────────────────────────────────────────── */
+button,.btn{cursor:pointer;border:none;border-radius:var(--radius);font-family:var(--font);font-size:.9rem;font-weight:600;padding:.6rem 1.2rem;transition:opacity .15s,transform .1s}
+button:hover,.btn:hover{opacity:.88;transform:translateY(-1px)}
+button:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-secondary{background:var(--surface2);color:var(--text);border:1px solid var(--border)}
+.btn-success{background:var(--green);color:#fff}
+.btn-danger{background:var(--red);color:#fff}
+.btn-sm{padding:.35rem .75rem;font-size:.8rem}
+.btn-lg{padding:.8rem 1.8rem;font-size:1rem}
+.w100{width:100%}
+
+/* ── Navbar ─────────────────────────────────────────────────────────────── */
+nav{background:var(--surface);border-bottom:1px solid var(--border);padding:.85rem 1.5rem;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+.nav-brand{font-size:1.25rem;font-weight:900;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.nav-right{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}
+.nav-btn{background:transparent;border:1px solid var(--border);color:var(--muted);font-size:.82rem;padding:.3rem .8rem;border-radius:999px}
+.nav-btn:hover{border-color:var(--accent);color:var(--text)}
+.nav-username{font-size:.82rem;color:var(--muted);background:var(--surface2);border:1px solid var(--border);border-radius:999px;padding:.3rem .85rem}
+
+/* ── Layout ─────────────────────────────────────────────────────────────── */
+main{flex:1;padding:2rem 1.5rem;max-width:1100px;margin:0 auto;width:100%}
+.page{display:none}.page.active{display:block}
+
+/* ── Cards ──────────────────────────────────────────────────────────────── */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.5rem}
+.card-title{font-size:.82rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.75rem}
+
+/* ── Forms ──────────────────────────────────────────────────────────────── */
+.form-group{margin-bottom:1.1rem}
+label{display:block;font-size:.85rem;color:var(--muted);margin-bottom:.35rem;font-weight:600}
+input,textarea,select{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:.65rem .9rem;font-size:.95rem;font-family:var(--font);outline:none;transition:border-color .15s}
+input:focus,textarea:focus{border-color:var(--accent)}
+textarea{resize:vertical;min-height:130px;font-family:var(--mono)}
+.err{font-size:.8rem;color:var(--red);margin-top:.3rem;min-height:1.1rem}
+.form-err{color:var(--red);font-size:.88rem;margin-bottom:.75rem}
+
+/* ── Auth pages ─────────────────────────────────────────────────────────── */
+.auth-wrap{display:flex;justify-content:center;padding-top:2.5rem}
+.auth-card{width:100%;max-width:420px}
+.auth-logo{text-align:center;margin-bottom:1.75rem}
+.auth-logo h1{font-size:2rem;font-weight:900;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.auth-logo p{color:var(--muted);font-size:.9rem;margin-top:.3rem}
+.auth-footer{text-align:center;margin-top:1rem;font-size:.88rem;color:var(--muted)}
+
+/* ── Stats ──────────────────────────────────────────────────────────────── */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:1rem;margin-bottom:2rem}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem}
+.stat-label{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:.4rem}
+.stat-value{font-size:2rem;font-weight:800;line-height:1}
+
+/* ── Table ──────────────────────────────────────────────────────────────── */
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.88rem}
+thead th{padding:.65rem 1rem;text-align:left;color:var(--muted);font-size:.76rem;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border)}
+tbody td{padding:.7rem 1rem;border-bottom:1px solid var(--border);vertical-align:middle}
+tbody tr:hover{background:var(--surface2)}
+
+/* ── Workspace ──────────────────────────────────────────────────────────── */
+.workspace{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem}
+@media(max-width:768px){.workspace{grid-template-columns:1fr}}
+.hint-card{background:var(--surface2);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--radius);padding:1rem 1.1rem;animation:fadeUp .3s ease}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.hint-level{font-size:.7rem;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.4rem}
+.hint-text{font-size:.95rem;line-height:1.65}
+.progress-meta{display:flex;justify-content:space-between;font-size:.8rem;color:var(--muted);margin-bottom:.4rem}
+.progress-wrap{background:var(--surface2);border-radius:999px;height:8px;overflow:hidden}
+.progress-bar{height:100%;border-radius:999px;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .4s ease}
+.exhausted-box{background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);border-radius:var(--radius);padding:1rem;text-align:center;color:var(--green);font-weight:600}
+.ph{text-align:center;padding:3rem 1rem;color:var(--muted)}
+.ph-icon{font-size:2.5rem;margin-bottom:.5rem}
+
+/* ── Badges ─────────────────────────────────────────────────────────────── */
+.badge{display:inline-block;font-size:.7rem;font-weight:700;padding:.15rem .5rem;border-radius:999px;text-transform:uppercase}
+.badge-easy{background:rgba(34,197,94,.2);color:var(--green);border:1px solid rgba(34,197,94,.4)}
+.badge-medium{background:rgba(245,158,11,.2);color:var(--yellow);border:1px solid rgba(245,158,11,.4)}
+.badge-hard{background:rgba(239,68,68,.2);color:var(--red);border:1px solid rgba(239,68,68,.4)}
+.badge-tag{background:rgba(108,99,255,.15);color:#a5b4fc;border:1px solid rgba(108,99,255,.3);margin:.1rem}
+
+/* ── Problem cards ──────────────────────────────────────────────────────── */
+.problem-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem}
+.problem-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.2rem;display:flex;flex-direction:column;gap:.6rem;transition:border-color .15s,transform .15s}
+.problem-card:hover{border-color:var(--accent);transform:translateY(-2px)}
+.problem-title{font-weight:700;font-size:.97rem}
+.problem-preview{font-size:.82rem;color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.problem-footer{display:flex;align-items:center;justify-content:space-between;margin-top:.25rem}
+.problem-source{font-size:.75rem;color:var(--muted)}
+
+/* ── Misc ────────────────────────────────────────────────────────────────── */
+.spinner{display:inline-block;width:1rem;height:1rem;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:.35rem}
+@keyframes spin{to{transform:rotate(360deg)}}
+.empty{text-align:center;padding:3rem 1rem;color:var(--muted)}
+.flash-wrap{max-width:1100px;margin:.75rem auto 0;padding:0 1.5rem}
+.flash{padding:.75rem 1.1rem;border-radius:var(--radius);margin-bottom:.5rem;font-size:.88rem}
+.flash-err{background:rgba(239,68,68,.15);border:1px solid var(--red);color:#fca5a5}
+.flash-ok{background:rgba(34,197,94,.15);border:1px solid var(--green);color:#86efac}
+.flash-info{background:rgba(108,99,255,.12);border:1px solid var(--accent);color:#a5b4fc}
+.sec-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem}
+.sec-title{font-size:1rem;font-weight:700}
+.solved-badge{display:inline-block;background:rgba(34,197,94,.15);border:1px solid var(--green);color:var(--green);font-size:.8rem;font-weight:700;padding:.25rem .7rem;border-radius:999px}
+.char-count{font-size:.74rem;color:var(--muted);text-align:right;margin-top:.25rem}
+footer{text-align:center;padding:1.2rem;font-size:.78rem;color:var(--muted);border-top:1px solid var(--border)}
+
+@media(max-width:640px){main{padding:1rem .75rem}nav{padding:.75rem .9rem}.nav-brand{font-size:1rem}}
+</style>
+</head>
+<body>
+
+<!-- ── Navbar ─────────────────────────────────────────────────────────────── -->
+<nav>
+  <span class="nav-brand" onclick="goTo('dashboard')" style="cursor:pointer">🤫 CodeWhisper</span>
+  <div class="nav-right" id="nav-right"></div>
+</nav>
+
+<!-- ── Flash ──────────────────────────────────────────────────────────────── -->
+<div class="flash-wrap" id="flash-wrap"></div>
+
+<!-- ── Pages ─────────────────────────────────────────────────────────────── -->
+<main>
+
+  <!-- LOGIN ──────────────────────────────────────────────────────────────── -->
+  <div class="page active" id="pg-login">
+    <div class="auth-wrap"><div class="auth-card">
+      <div class="auth-logo">
+        <h1>🤫 CodeWhisper</h1>
+        <p>Your Socratic DSA learning companion</p>
+      </div>
+      <div class="card">
+        <h2 style="font-size:1.2rem;margin-bottom:1.3rem;font-weight:700">Welcome back</h2>
+        <div class="form-group"><label>Email</label><input id="li-email" type="email" placeholder="you@example.com"/></div>
+        <div class="form-group"><label>Password</label><input id="li-pass" type="password" placeholder="••••••••"/></div>
+        <div class="form-err" id="li-err"></div>
+        <button class="btn btn-primary w100" style="padding:.75rem" id="li-btn" onclick="doLogin()">Sign in</button>
+      </div>
+      <div class="auth-footer">No account? <a onclick="goTo('register')" href="#">Create one</a></div>
+    </div></div>
+  </div>
+
+  <!-- REGISTER ───────────────────────────────────────────────────────────── -->
+  <div class="page" id="pg-register">
+    <div class="auth-wrap"><div class="auth-card">
+      <div class="auth-logo"><h1>🤫 CodeWhisper</h1><p>Create your free account</p></div>
+      <div class="card">
+        <h2 style="font-size:1.2rem;margin-bottom:1.3rem;font-weight:700">Get started</h2>
+        <div class="form-group"><label>Username</label><input id="rg-user" type="text" placeholder="alice_dev"/></div>
+        <div class="form-group"><label>Email</label><input id="rg-email" type="email" placeholder="you@example.com"/></div>
+        <div class="form-group"><label>Password</label><input id="rg-pass" type="password" placeholder="Min. 8 characters"/>
+          <div style="font-size:.75rem;color:var(--muted);margin-top:.25rem">At least 8 characters</div>
+        </div>
+        <div class="form-err" id="rg-err"></div>
+        <button class="btn btn-primary w100" style="padding:.75rem" id="rg-btn" onclick="doRegister()">Create account</button>
+      </div>
+      <div class="auth-footer">Already have an account? <a onclick="goTo('login')" href="#">Sign in</a></div>
+    </div></div>
+  </div>
+
+  <!-- DASHBOARD ──────────────────────────────────────────────────────────── -->
+  <div class="page" id="pg-dashboard">
+    <div style="margin-bottom:1.75rem">
+      <h1 style="font-size:1.5rem;font-weight:800" id="dash-greeting">👋 Welcome back!</h1>
+      <p style="color:var(--muted);font-size:.9rem;margin-top:.2rem">Your DSA learning progress at a glance.</p>
+    </div>
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-label">Attempted</div><div class="stat-value" id="ds-att">–</div></div>
+      <div class="stat-card"><div class="stat-label">Solved</div><div class="stat-value" id="ds-sol">–</div></div>
+      <div class="stat-card"><div class="stat-label">Solve Rate</div><div class="stat-value" id="ds-rate">–</div></div>
+      <div class="stat-card"><div class="stat-label">Avg Hints</div><div class="stat-value" id="ds-hints">–</div></div>
+    </div>
+    <div class="card" style="margin-bottom:1.5rem">
+      <div class="card-title">🧠 Top Concepts</div>
+      <div id="ds-tags" style="display:flex;flex-wrap:wrap;gap:.35rem"><span style="color:var(--muted);font-size:.88rem">No data yet — start solving!</span></div>
+    </div>
+    <div class="card">
+      <div class="sec-header">
+        <span class="sec-title">📋 Recent Sessions</span>
+        <button class="btn btn-primary btn-sm" onclick="goTo('solve')">+ New Problem</button>
+      </div>
+      <div id="ds-history"></div>
+    </div>
+  </div>
+
+  <!-- SOLVE ──────────────────────────────────────────────────────────────── -->
+  <div class="page" id="pg-solve">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;flex-wrap:wrap;gap:.75rem">
+      <div>
+        <h1 style="font-size:1.5rem;font-weight:800">💡 Hint Workspace</h1>
+        <p style="color:var(--muted);font-size:.9rem;margin-top:.2rem">Paste a problem — get Socratic hints, no spoilers!</p>
+      </div>
+      <span id="solved-badge"></span>
+    </div>
+    <div class="workspace">
+      <!-- Left -->
+      <div>
+        <div class="card">
+          <div class="card-title">📋 Your Problem</div>
+          <textarea id="sv-problem" placeholder="Given an array of integers and a target, return the indices of two numbers that add up to the target…" oninput="document.getElementById('sv-chars').textContent=this.value.length"></textarea>
+          <div class="char-count"><span id="sv-chars">0</span> / 10,000</div>
+          <div style="display:flex;gap:.75rem;margin-top:.85rem;flex-wrap:wrap">
+            <button class="btn btn-primary" id="sv-first-btn" onclick="getFirstHint()">🔮 Get First Hint</button>
+            <button class="btn btn-secondary btn-sm" onclick="clearSolve()">Clear</button>
+          </div>
+        </div>
+        <div id="sv-actions" style="display:none;margin-top:1rem">
+          <div class="card" style="padding:1rem">
+            <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:center">
+              <button class="btn btn-success" id="sv-solve-btn" onclick="markSolved()">✅ Mark as Solved</button>
+              <button class="btn btn-secondary btn-sm" onclick="resetSolve()">↩ Reset</button>
+              <span id="sv-meta" style="font-size:.8rem;color:var(--muted)"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- Right -->
+      <div>
+        <div id="sv-progress" style="display:none;margin-bottom:1rem">
+          <div class="progress-meta"><span>Hints revealed</span><span id="sv-counter">0 / 5</span></div>
+          <div class="progress-wrap"><div class="progress-bar" id="sv-bar" style="width:0%"></div></div>
+        </div>
+        <div id="sv-hints"><div class="ph"><div class="ph-icon">🧠</div><p>Hints appear here.</p><p style="font-size:.82rem;margin-top:.35rem">Paste a problem then click <strong>Get First Hint</strong>.</p></div></div>
+        <div id="sv-next-wrap" style="display:none;margin-top:1rem">
+          <button class="btn btn-primary w100" id="sv-next-btn" onclick="getNextHint()">➡ Next Hint</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RECOMMEND ──────────────────────────────────────────────────────────── -->
+  <div class="page" id="pg-recommend">
+    <div style="margin-bottom:1.5rem">
+      <h1 style="font-size:1.5rem;font-weight:800">🔭 Discover Problems</h1>
+      <p style="color:var(--muted);font-size:.9rem;margin-top:.2rem">Personalized recommendations based on your learning history.</p>
+    </div>
+    <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.5rem;flex-wrap:wrap">
+      <label style="margin:0">Show</label>
+      <select id="rc-limit" onchange="loadRecs()" style="width:auto;padding:.4rem .75rem">
+        <option value="5" selected>5 problems</option>
+        <option value="10">10 problems</option>
+        <option value="20">20 problems</option>
+      </select>
+      <button class="btn btn-secondary btn-sm" onclick="loadRecs()">🔄 Refresh</button>
+    </div>
+    <div id="rc-container"><div class="empty"><span class="spinner"></span> Loading…</div></div>
+  </div>
+
+</main>
+<footer>CodeWhisper — Built to teach, not to tell 🚀</footer>
+
+<!-- ── JavaScript ─────────────────────────────────────────────────────────── -->
+<script>
+/* ══════════════════════════════════════════════════════════════════════════
+   CONFIG & STATE
+══════════════════════════════════════════════════════════════════════════ */
+// Same-origin API — no separate server URL in the UI
+localStorage.removeItem('cw_api');
+const API = '';
+let TOKEN = localStorage.getItem('cw_token');
+let USER  = JSON.parse(localStorage.getItem('cw_user') || 'null');
+let SESSION_ID = null, HINT_LEVEL = 0, EXHAUSTED = false, IS_SOLVED = false;
+const MAX_HINTS = 5;
+
+/* ── API helpers ────────────────────────────────────────────────────────── */
+async function api(method, path, body) {
+  const opts = { method, headers: {'Content-Type':'application/json', 'Authorization':'Bearer '+(TOKEN||'')} };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(API + path, opts);
+  const d = await r.json();
+  return { ok: r.ok, status: r.status, data: d };
+}
+
+/* ── Flash ──────────────────────────────────────────────────────────────── */
+function flash(msg, type='info') {
+  const wrap = document.getElementById('flash-wrap');
+  const d = document.createElement('div');
+  d.className = `flash flash-${type}`;
+  d.textContent = (type==='err'?'⚠️ ':type==='ok'?'✅ ':'ℹ️ ') + msg;
+  wrap.prepend(d);
+  setTimeout(()=>d.remove(), 5000);
+}
+
+/* ── Page routing ───────────────────────────────────────────────────────── */
+function goTo(page) {
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById('pg-'+page).classList.add('active');
+  renderNav();
+  if (page==='dashboard') loadDashboard();
+  if (page==='recommend') loadRecs();
+  window.scrollTo(0,0);
+}
+
+function requireAuth() {
+  if (!TOKEN) { goTo('login'); return false; }
+  return true;
+}
+
+/* ── Nav ────────────────────────────────────────────────────────────────── */
+function renderNav() {
+  const nr = document.getElementById('nav-right');
+  if (TOKEN && USER) {
+    nr.innerHTML = `
+      <button class="nav-btn btn" onclick="goTo('dashboard')">Dashboard</button>
+      <button class="nav-btn btn" onclick="goTo('solve')">Solve</button>
+      <button class="nav-btn btn" onclick="goTo('recommend')">Discover</button>
+      <span class="nav-username">👤 ${USER.username}</span>
+      <button class="nav-btn btn" onclick="doLogout()">Logout</button>`;
+  } else {
+    nr.innerHTML = `
+      <button class="nav-btn btn" onclick="goTo('login')">Login</button>
+      <button class="btn btn-primary btn-sm" onclick="goTo('register')">Sign up</button>`;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   AUTH
+══════════════════════════════════════════════════════════════════════════ */
+async function doLogin() {
+  const btn = document.getElementById('li-btn');
+  document.getElementById('li-err').textContent = '';
+  const email = document.getElementById('li-email').value.trim();
+  const pass  = document.getElementById('li-pass').value;
+  if (!email || !pass) { document.getElementById('li-err').textContent = 'Email and password required.'; return; }
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Signing in…';
+  const {ok, data} = await api('POST', '/auth/login', {email, password: pass});
+  if (ok) {
+    TOKEN = data.access_token; USER = data.user;
+    localStorage.setItem('cw_token', TOKEN); localStorage.setItem('cw_user', JSON.stringify(USER));
+    goTo('dashboard');
+  } else { document.getElementById('li-err').textContent = data.error || 'Login failed.'; }
+  btn.disabled = false; btn.textContent = 'Sign in';
+}
+
+async function doRegister() {
+  const btn = document.getElementById('rg-btn');
+  document.getElementById('rg-err').textContent = '';
+  const username = document.getElementById('rg-user').value.trim();
+  const email    = document.getElementById('rg-email').value.trim();
+  const password = document.getElementById('rg-pass').value;
+  if (password.length < 8) { document.getElementById('rg-err').textContent = 'Password must be at least 8 characters.'; return; }
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Creating…';
+  const {ok, data} = await api('POST', '/auth/register', {username, email, password});
+  if (ok) {
+    TOKEN = data.access_token; USER = data.user;
+    localStorage.setItem('cw_token', TOKEN); localStorage.setItem('cw_user', JSON.stringify(USER));
+    flash('Account created! Welcome 🎉', 'ok'); goTo('dashboard');
+  } else { document.getElementById('rg-err').textContent = data.error || 'Registration failed.'; }
+  btn.disabled = false; btn.textContent = 'Create account';
+}
+
+async function doLogout() {
+  try { await api('POST', '/auth/logout'); } catch(e) {}
+  TOKEN = null; USER = null;
+  localStorage.removeItem('cw_token'); localStorage.removeItem('cw_user');
+  goTo('login');
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   DASHBOARD
+══════════════════════════════════════════════════════════════════════════ */
+async function loadDashboard() {
+  if (!requireAuth()) return;
+  if (USER) document.getElementById('dash-greeting').textContent = `👋 Welcome back, ${USER.username}!`;
+  const {ok:sOk, data:stats} = await api('GET', '/progress/stats');
+  if (sOk) {
+    document.getElementById('ds-att').textContent   = stats.total_attempted;
+    document.getElementById('ds-sol').textContent   = stats.total_solved;
+    document.getElementById('ds-rate').textContent  = stats.solve_rate;
+    document.getElementById('ds-hints').textContent = stats.average_hints_per_problem;
+    const tEl = document.getElementById('ds-tags');
+    if (stats.top_tags && stats.top_tags.length) {
+      tEl.innerHTML = stats.top_tags.map(t=>`<span class="badge badge-tag">${t}</span>`).join('');
+    }
+  }
+  const {ok:hOk, data:hist} = await api('GET', '/progress/history?per_page=10');
+  const hBody = document.getElementById('ds-history');
+  if (hOk && hist.sessions && hist.sessions.length) {
+    const rows = hist.sessions.map(s => {
+      const date  = new Date(s.started_at).toLocaleDateString();
+      const prev  = (s.problem_preview||'').replace(/</g,'&lt;');
+      const status = s.is_solved
+        ? '<span style="color:var(--green);font-weight:600;font-size:.82rem">✅ Solved</span>'
+        : '<span style="color:var(--yellow);font-size:.82rem">⏳ In Progress</span>';
+      const cont = !s.is_solved
+        ? `<button class="btn btn-secondary btn-sm" onclick="resumeSession('${s.session_id}')">Continue</button>` : '';
+      return `<tr><td>${date}</td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:.82rem">${prev}</td><td>${s.hints_used}</td><td>${status}</td><td>${cont}</td></tr>`;
+    }).join('');
+    hBody.innerHTML = `<div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Problem</th><th>Hints</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  } else {
+    hBody.innerHTML = `<div class="empty"><p style="font-size:1.1rem;margin-bottom:.5rem">No sessions yet</p><p>Paste a DSA problem and get your first hint!</p><button class="btn btn-primary" style="margin-top:1rem" onclick="goTo('solve')">Start solving</button></div>`;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SOLVE / HINT WORKSPACE
+══════════════════════════════════════════════════════════════════════════ */
+function clearSolve() {
+  document.getElementById('sv-problem').value = '';
+  document.getElementById('sv-chars').textContent = '0';
+  document.getElementById('sv-hints').innerHTML = `<div class="ph"><div class="ph-icon">🧠</div><p>Hints appear here.</p><p style="font-size:.82rem;margin-top:.35rem">Paste a problem then click <strong>Get First Hint</strong>.</p></div>`;
+  document.getElementById('sv-progress').style.display = 'none';
+  document.getElementById('sv-next-wrap').style.display = 'none';
+  document.getElementById('sv-actions').style.display = 'none';
+  document.getElementById('solved-badge').innerHTML = '';
+  SESSION_ID=null; HINT_LEVEL=0; EXHAUSTED=false; IS_SOLVED=false;
+}
+
+async function getFirstHint() {
+  if (!requireAuth()) return;
+  const text = document.getElementById('sv-problem').value.trim();
+  if (!text) { flash('Paste a problem first.','err'); return; }
+  if (text.length < 20) { flash('Problem text too short (min 20 chars).','err'); return; }
+  const btn = document.getElementById('sv-first-btn');
+  btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Generating…';
+  const {ok, data} = await api('POST', '/hints/submit', {problem_text: text});
+  btn.disabled=false; btn.textContent='🔮 Get First Hint';
+  if (!ok) { flash(data.error||'Failed to generate hint.','err'); return; }
+  SESSION_ID=data.session_id; HINT_LEVEL=data.hint_level; EXHAUSTED=data.exhausted;
+  document.getElementById('sv-hints').innerHTML='';
+  appendHint(data.hint, data.hint_level);
+  document.getElementById('sv-progress').style.display='block';
+  document.getElementById('sv-actions').style.display='block';
+  updateSolveUI();
+}
+
+async function getNextHint() {
+  if (!SESSION_ID||EXHAUSTED) return;
+  const btn = document.getElementById('sv-next-btn');
+  btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
+  const {ok, data} = await api('GET', `/hints/next/${SESSION_ID}`);
+  btn.disabled=false; btn.textContent='➡ Next Hint';
+  if (!ok) { flash(data.error||'Failed to load hint.','err'); return; }
+  if (data.hint) { HINT_LEVEL=data.hint_level; appendHint(data.hint, data.hint_level); }
+  if (data.exhausted) {
+    EXHAUSTED=true;
+    const box=document.createElement('div'); box.className='exhausted-box';
+    box.textContent=`🎯 You've seen all ${MAX_HINTS} hints — time to solve it! 💪`;
+    document.getElementById('sv-hints').appendChild(box);
+  }
+  updateSolveUI();
+}
+
+async function markSolved() {
+  if (!SESSION_ID||IS_SOLVED) return;
+  const {ok,data} = await api('PATCH', `/progress/solve/${SESSION_ID}`);
+  if (ok) { IS_SOLVED=true; document.getElementById('solved-badge').innerHTML='<span class="solved-badge">✅ Solved!</span>'; document.getElementById('sv-solve-btn').disabled=true; flash('🎉 Marked as solved! Great work.','ok'); }
+  else flash(data.error||'Could not mark solved.','err');
+}
+
+async function resetSolve() {
+  if (!SESSION_ID) return;
+  const {ok} = await api('POST', `/hints/reset/${SESSION_ID}`);
+  if (ok) { document.getElementById('sv-hints').innerHTML=''; HINT_LEVEL=0; EXHAUSTED=false; updateSolveUI(); flash('Reset — starting from Hint #1.','info'); }
+}
+
+async function resumeSession(sid) {
+  goTo('solve');
+  SESSION_ID=sid;
+  const {ok,data} = await api('GET', `/hints/session/${sid}`);
+  if (!ok) return;
+  const hints=data.hints||[];
+  if (!hints.length) return;
+  document.getElementById('sv-hints').innerHTML='';
+  hints.forEach(h=>appendHint(h.hint,h.level));
+  HINT_LEVEL=hints[hints.length-1].level; EXHAUSTED=HINT_LEVEL>=MAX_HINTS;
+  document.getElementById('sv-progress').style.display='block';
+  document.getElementById('sv-actions').style.display='block';
+  updateSolveUI(); flash('Session resumed ↩','info');
+}
+
+function appendHint(text, level) {
+  const p=document.getElementById('sv-hints');
+  const ph=p.querySelector('.ph'); if(ph) ph.remove();
+  const card=document.createElement('div'); card.className='hint-card';
+  card.innerHTML=`<div class="hint-level">💡 Hint ${level} of ${MAX_HINTS}</div><div class="hint-text">${esc(text)}</div>`;
+  p.appendChild(card); card.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+function updateSolveUI() {
+  document.getElementById('sv-next-wrap').style.display=(!EXHAUSTED&&SESSION_ID)?'block':'none';
+  document.getElementById('sv-bar').style.width=Math.round((HINT_LEVEL/MAX_HINTS)*100)+'%';
+  document.getElementById('sv-counter').textContent=`${HINT_LEVEL} / ${MAX_HINTS}`;
+  document.getElementById('sv-meta').textContent=SESSION_ID?`Session active  •  Hint ${HINT_LEVEL}/${MAX_HINTS}`:'';
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   RECOMMENDATIONS
+══════════════════════════════════════════════════════════════════════════ */
+async function loadRecs() {
+  if (!requireAuth()) return;
+  const limit=document.getElementById('rc-limit').value;
+  const con=document.getElementById('rc-container');
+  con.innerHTML='<div class="empty"><span class="spinner"></span> Loading…</div>';
+  const {ok,data}=await api('GET',`/recommend/problems?limit=${limit}`);
+  if (!ok) { con.innerHTML='<p style="color:var(--red)">Failed to load.</p>'; return; }
+  const recs=data.recommendations||[];
+  if (!recs.length) { con.innerHTML=`<div class="empty"><p style="font-size:1.1rem;margin-bottom:.5rem">No recommendations yet</p><p>Solve more problems to unlock personalized suggestions!</p><button class="btn btn-primary" style="margin-top:1rem" onclick="goTo('solve')">Start solving</button></div>`; return; }
+  const cards=recs.map(p=>{
+    const diff=(p.difficulty||'').toLowerCase();
+    const badge=diff?`<span class="badge badge-${diff}">${p.difficulty}</span>`:'';
+    const tags=(p.tags||[]).map(t=>`<span class="badge badge-tag">${t}</span>`).join('');
+    const prev=esc(p.statement_preview||'');
+    return `<div class="problem-card"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.5rem"><span class="problem-title">${esc(p.title||'Untitled')}</span>${badge}</div><div style="display:flex;flex-wrap:wrap;gap:.2rem">${tags}</div>${prev?`<div class="problem-preview">${prev}</div>`:''}<div class="problem-footer"><span class="problem-source">${esc(p.source||'')}</span><button class="btn btn-primary btn-sm" onclick="startFromRec(\`${(p.statement_preview||p.title||'').replace(/`/g,"'").replace(/\n/g,' ')}\`)">▶ Solve</button></div></div>`;
+  }).join('');
+  con.innerHTML=`<div class="problem-grid">${cards}</div>`;
+}
+
+function startFromRec(text) {
+  goTo('solve');
+  document.getElementById('sv-problem').value=text;
+  document.getElementById('sv-chars').textContent=text.length;
+}
+
+/* ── Utility ────────────────────────────────────────────────────────────── */
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+/* ── Init ───────────────────────────────────────────────────────────────── */
+(function init() {
+  if (window.location.protocol === 'file:') {
+    flash('Open CodeWhisper through the running app in your browser, not as a saved HTML file.', 'err');
+  }
+  renderNav();
+  if (TOKEN && USER) goTo('dashboard');
+  else goTo('login');
+})();
+</script>
+</body>
+</html>

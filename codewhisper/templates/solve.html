@@ -1,0 +1,317 @@
+{% extends "base.html" %}
+{% block title %}Solve — Hint Workspace{% endblock %}
+
+{% block content %}
+<style>
+  .workspace { display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; }
+  @media(max-width:768px){ .workspace { grid-template-columns:1fr; } }
+
+  /* Left panel — problem input */
+  .panel-title { font-size:.85rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.06em; margin-bottom:.75rem; display:flex; align-items:center; gap:.5rem; }
+  #problem-textarea { width:100%; min-height:220px; background:var(--surface2); border:1px solid var(--border); color:var(--text); border-radius:var(--radius); padding:.85rem 1rem; font-size:.9rem; font-family:var(--mono); resize:vertical; outline:none; transition:border-color .15s; }
+  #problem-textarea:focus { border-color:var(--accent); }
+  .char-count { font-size:.75rem; color:var(--text-muted); text-align:right; margin-top:.3rem; }
+  .action-row { display:flex; gap:.75rem; flex-wrap:wrap; margin-top:.85rem; align-items:center; }
+
+  /* Right panel — hints */
+  #hint-panel { display:flex; flex-direction:column; gap:1rem; }
+  .hint-card {
+    background:var(--surface2);
+    border:1px solid var(--border);
+    border-left:3px solid var(--accent);
+    border-radius:var(--radius);
+    padding:1rem 1.1rem;
+    animation: fadeSlide .35s ease;
+  }
+  @keyframes fadeSlide { from { opacity:0; transform:translateY(8px);} to { opacity:1; transform:none;} }
+  .hint-level { font-size:.72rem; font-weight:700; color:var(--accent); text-transform:uppercase; letter-spacing:.06em; margin-bottom:.4rem; }
+  .hint-text  { font-size:.95rem; line-height:1.6; color:var(--text); }
+
+  /* Progress bar section */
+  .progress-section { margin-bottom:1rem; }
+  .progress-meta { display:flex; justify-content:space-between; font-size:.8rem; color:var(--text-muted); margin-bottom:.4rem; }
+
+  /* Exhausted state */
+  .exhausted-box { background:rgba(34,197,94,.1); border:1px solid rgba(34,197,94,.3); border-radius:var(--radius); padding:1rem 1.1rem; text-align:center; color:var(--green); font-weight:600; }
+
+  /* Solved state */
+  .solved-badge { display:inline-block; background:rgba(34,197,94,.15); border:1px solid var(--green); color:var(--green); font-size:.82rem; font-weight:700; padding:.3rem .8rem; border-radius:999px; margin-left:.5rem; }
+
+  /* Placeholder */
+  .hints-placeholder { text-align:center; padding:3rem 1rem; color:var(--text-muted); }
+  .hints-placeholder .icon { font-size:2.5rem; margin-bottom:.5rem; }
+</style>
+
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;flex-wrap:wrap;gap:.75rem;">
+  <div>
+    <h1 style="font-size:1.5rem;font-weight:800;">💡 Hint Workspace</h1>
+    <p style="color:var(--text-muted);font-size:.9rem;margin-top:.2rem;">Paste a problem &amp; get Socratic hints — no spoilers!</p>
+  </div>
+  <div id="solved-indicator"></div>
+</div>
+
+<div class="workspace">
+
+  <!-- ── LEFT: Problem Input ─────────────────────────────────────────── -->
+  <div>
+    <div class="card">
+      <div class="panel-title">📋 Paste Your Problem</div>
+      <textarea id="problem-textarea" placeholder="Given an array of integers nums and a target, return indices of the two numbers that add up to target…"></textarea>
+      <div class="char-count"><span id="char-count">0</span> / 10,000</div>
+      <div class="action-row">
+        <button class="btn btn-primary" id="btn-first-hint" onclick="getFirstHint()">
+          🔮 Get First Hint
+        </button>
+        <button class="btn btn-secondary" id="btn-clear" onclick="clearWorkspace()">Clear</button>
+      </div>
+    </div>
+
+    <!-- Mark as Solved / Reset (visible only during active session) -->
+    <div id="session-actions" style="display:none;margin-top:1rem;">
+      <div class="card" style="padding:1rem;">
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:center;">
+          <button class="btn btn-success" id="btn-mark-solved" onclick="markSolved()">✅ Mark as Solved</button>
+          <button class="btn btn-secondary btn-sm" id="btn-reset" onclick="resetSession()">↩ Reset Hints</button>
+          <span id="solving-meta" style="font-size:.8rem;color:var(--text-muted);"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── RIGHT: Hints ────────────────────────────────────────────────── -->
+  <div>
+    <!-- Progress bar -->
+    <div class="progress-section" id="progress-section" style="display:none;">
+      <div class="progress-meta">
+        <span>Hints revealed</span>
+        <span id="hint-counter">0 / 5</span>
+      </div>
+      <div class="progress-wrap">
+        <div class="progress-bar" id="progress-bar" style="width:0%"></div>
+      </div>
+    </div>
+
+    <!-- Hints display -->
+    <div id="hint-panel">
+      <div class="hints-placeholder">
+        <div class="icon">🧠</div>
+        <p>Your progressive hints will appear here.</p>
+        <p style="margin-top:.35rem;font-size:.82rem;">Paste a problem and click <strong>Get First Hint</strong>.</p>
+      </div>
+    </div>
+
+    <!-- Next Hint button (visible during active session) -->
+    <div id="next-hint-wrap" style="display:none;margin-top:1rem;">
+      <button class="btn btn-primary" style="width:100%" id="btn-next" onclick="getNextHint()">
+        ➡ Next Hint
+      </button>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  if (!CW.requireAuth()) void 0;
+
+  // ── Pre-fill from recommendations page ───────────────────────────
+  window.addEventListener('DOMContentLoaded', () => {
+    const prefill = sessionStorage.getItem('cw_prefill');
+    if (prefill) {
+      document.getElementById('problem-textarea').value = prefill;
+      document.getElementById('char-count').textContent = prefill.length;
+      sessionStorage.removeItem('cw_prefill');
+    }
+  });
+
+  // ── State ──────────────────────────────────────────────────────────
+  let sessionId   = null;
+  let hintLevel   = 0;
+  let totalHints  = 5;
+  let exhausted   = false;
+  let isSolved    = false;
+  const MAX_HINTS = 5;
+
+  // ── Check URL params for pre-filled session ──────────────────────
+  const urlParams = new URLSearchParams(window.location.search);
+  const resumeSession = urlParams.get('session');
+  if (resumeSession) {
+    sessionId = resumeSession;
+    loadExistingSession(resumeSession);
+  }
+
+  // ── Char counter ─────────────────────────────────────────────────
+  document.getElementById('problem-textarea').addEventListener('input', function() {
+    document.getElementById('char-count').textContent = this.value.length;
+  });
+
+  // ── Clear workspace ──────────────────────────────────────────────
+  function clearWorkspace() {
+    document.getElementById('problem-textarea').value = '';
+    document.getElementById('char-count').textContent = '0';
+    document.getElementById('hint-panel').innerHTML = `
+      <div class="hints-placeholder">
+        <div class="icon">🧠</div>
+        <p>Your progressive hints will appear here.</p>
+        <p style="margin-top:.35rem;font-size:.82rem;">Paste a problem and click <strong>Get First Hint</strong>.</p>
+      </div>`;
+    document.getElementById('progress-section').style.display = 'none';
+    document.getElementById('next-hint-wrap').style.display   = 'none';
+    document.getElementById('session-actions').style.display  = 'none';
+    document.getElementById('solved-indicator').innerHTML = '';
+    sessionId = null; hintLevel = 0; exhausted = false; isSolved = false;
+  }
+
+  // ── Get first hint ───────────────────────────────────────────────
+  async function getFirstHint() {
+    const text = document.getElementById('problem-textarea').value.trim();
+    if (!text) { CW.flash('Please paste a problem first.', 'error'); return; }
+    if (text.length < 20) { CW.flash('Problem text is too short (min 20 chars).', 'error'); return; }
+
+    const btn = document.getElementById('btn-first-hint');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Generating…';
+
+    const { ok, data } = await CW.api('POST', '/hints/submit', { problem_text: text });
+
+    btn.disabled = false;
+    btn.textContent = '🔮 Get First Hint';
+
+    if (!ok) { CW.flash(data.error || 'Failed to generate hints.', 'error'); return; }
+
+    sessionId  = data.session_id;
+    hintLevel  = data.hint_level;
+    totalHints = data.total_hints;
+    exhausted  = data.exhausted;
+
+    renderFirstHint(data.hint, data.hint_level);
+    updateUI();
+  }
+
+  // ── Get next hint ────────────────────────────────────────────────
+  async function getNextHint() {
+    if (exhausted || !sessionId) return;
+
+    const btn = document.getElementById('btn-next');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Loading…';
+
+    const { ok, data } = await CW.api('GET', `/hints/next/${sessionId}`);
+
+    btn.disabled = false;
+    btn.textContent = '➡ Next Hint';
+
+    if (!ok) { CW.flash(data.error || 'Failed to fetch next hint.', 'error'); return; }
+
+    if (data.hint) {
+      hintLevel = data.hint_level;
+      appendHint(data.hint, data.hint_level);
+    }
+    if (data.exhausted) {
+      exhausted = true;
+      renderExhausted();
+    }
+    updateUI();
+  }
+
+  // ── Load existing session (from URL param) ────────────────────────
+  async function loadExistingSession(sid) {
+    const { ok, data } = await CW.api('GET', `/hints/session/${sid}`);
+    if (!ok) { CW.flash('Could not load session.', 'error'); sessionId = null; return; }
+
+    const hints = data.hints || [];
+    if (hints.length === 0) return;
+
+    document.getElementById('hint-panel').innerHTML = '';
+    hints.forEach(h => appendHint(h.hint, h.level));
+    hintLevel  = hints[hints.length - 1].level;
+    totalHints = MAX_HINTS;
+    exhausted  = hintLevel >= MAX_HINTS;
+
+    document.getElementById('progress-section').style.display = 'block';
+    document.getElementById('session-actions').style.display  = 'block';
+    document.getElementById('next-hint-wrap').style.display   = exhausted ? 'none' : 'block';
+    updateProgress();
+
+    CW.flash('Session resumed ↩', 'info');
+  }
+
+  // ── Mark as solved ───────────────────────────────────────────────
+  async function markSolved() {
+    if (!sessionId || isSolved) return;
+    const { ok, data } = await CW.api('PATCH', `/progress/solve/${sessionId}`);
+    if (ok) {
+      isSolved = true;
+      document.getElementById('solved-indicator').innerHTML = '<span class="solved-badge">✅ Solved!</span>';
+      document.getElementById('btn-mark-solved').disabled = true;
+      CW.flash('🎉 Problem marked as solved! Great work.', 'success');
+    } else {
+      CW.flash(data.error || 'Could not mark as solved.', 'error');
+    }
+  }
+
+  // ── Reset session ─────────────────────────────────────────────────
+  async function resetSession() {
+    if (!sessionId) return;
+    const { ok } = await CW.api('POST', `/hints/reset/${sessionId}`);
+    if (ok) {
+      document.getElementById('hint-panel').innerHTML = '';
+      hintLevel = 0; exhausted = false;
+      updateUI();
+      CW.flash('Session reset — start from Hint #1 again.', 'info');
+    }
+  }
+
+  // ── Render helpers ───────────────────────────────────────────────
+  function renderFirstHint(text, level) {
+    document.getElementById('hint-panel').innerHTML = '';
+    appendHint(text, level);
+    document.getElementById('progress-section').style.display = 'block';
+    document.getElementById('session-actions').style.display  = 'block';
+  }
+
+  function appendHint(text, level) {
+    const panel = document.getElementById('hint-panel');
+    // Remove placeholder
+    const ph = panel.querySelector('.hints-placeholder');
+    if (ph) ph.remove();
+
+    const card = document.createElement('div');
+    card.className = 'hint-card';
+    card.innerHTML = `
+      <div class="hint-level">💡 Hint ${level} of ${totalHints}</div>
+      <div class="hint-text">${escHtml(text)}</div>`;
+    panel.appendChild(card);
+    card.scrollIntoView({ behavior:'smooth', block:'nearest' });
+  }
+
+  function renderExhausted() {
+    const panel = document.getElementById('hint-panel');
+    if (panel.querySelector('.exhausted-box')) return;
+    const box   = document.createElement('div');
+    box.className = 'exhausted-box';
+    box.innerHTML = `🎯 You've seen all ${totalHints} hints! Time to try solving it yourself. 💪`;
+    panel.appendChild(box);
+    document.getElementById('next-hint-wrap').style.display = 'none';
+  }
+
+  function updateUI() {
+    const nextWrap = document.getElementById('next-hint-wrap');
+    nextWrap.style.display = (!exhausted && sessionId) ? 'block' : 'none';
+    updateProgress();
+    document.getElementById('solving-meta').textContent =
+      `Session active  •  Hint ${hintLevel}/${MAX_HINTS}`;
+  }
+
+  function updateProgress() {
+    const pct = Math.round((hintLevel / MAX_HINTS) * 100);
+    document.getElementById('progress-bar').style.width = pct + '%';
+    document.getElementById('hint-counter').textContent = `${hintLevel} / ${MAX_HINTS}`;
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+</script>
+{% endblock %}

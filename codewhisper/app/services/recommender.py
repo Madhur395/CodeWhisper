@@ -55,13 +55,15 @@ class RecommenderService:
         uid = self._parse_uuid(user_id)
         limit = max(1, min(limit, 20))  # clamp to [1, 20]
 
-        # ── Step 1: Collect attempted problem IDs ────────────────────────────
+        # ── Step 1: Collect solved problem IDs (exclude from Discover) ───────
+        # Only hide problems the user marked solved — not every hint session,
+        # otherwise the bank drains to 0–2 items after casual testing.
         sessions = UserProblemSession.query.filter_by(user_id=uid).all()
 
-        attempted_ids = {
+        excluded_ids = {
             s.problem_id
             for s in sessions
-            if s.problem_id is not None
+            if s.problem_id is not None and s.is_solved
         }
 
         # ── Step 2: Build user tag profile ───────────────────────────────────
@@ -72,15 +74,15 @@ class RecommenderService:
                 tag_profile.update(session_tags)
 
         logger.debug(
-            "User %s attempted=%d tag_profile=%s",
-            user_id, len(attempted_ids), dict(tag_profile.most_common(5))
+            "User %s solved_excluded=%d tag_profile=%s",
+            user_id, len(excluded_ids), dict(tag_profile.most_common(5))
         )
 
-        # ── Step 3: Fetch all unseen problems ─────────────────────────────────
+        # ── Step 3: Fetch problems not yet solved ───────────────────────────
         candidates_query = Problem.query
-        if attempted_ids:
+        if excluded_ids:
             candidates_query = candidates_query.filter(
-                Problem.id.notin_(list(attempted_ids))
+                Problem.id.notin_(list(excluded_ids))
             )
         candidates = candidates_query.all()
 
@@ -88,16 +90,19 @@ class RecommenderService:
             logger.info("No unseen problems available for user %s", user_id)
             return []
 
-        # ── Step 4 & 5: Score and sort ────────────────────────────────────────
+        # ── Step 4 & 5: Score, shuffle a wider pool, then pick `limit` ───────
         if tag_profile:
-            scored = self._score_problems(candidates, tag_profile)
+            ranked = self._score_problems(candidates, tag_profile)
         else:
-            # No tag history — random shuffle of all unseen problems
-            random.shuffle(candidates)
-            scored = candidates[:limit]
+            ranked = list(candidates)
+            random.shuffle(ranked)
+
+        pool_size = min(len(ranked), max(limit * 4, limit + 8))
+        pool = list(ranked[:pool_size])
+        random.shuffle(pool)
 
         # ── Step 6: Serialise ─────────────────────────────────────────────────
-        return [self._to_card(p) for p in scored[:limit]]
+        return [self._to_card(p) for p in pool[:limit]]
 
     # ── Private helpers ────────────────────────────────────────────────────────
 

@@ -502,30 +502,42 @@ function updateSolveUI() {
 /* ══════════════════════════════════════════════════════════════════════════
    RECOMMENDATIONS
 ══════════════════════════════════════════════════════════════════════════ */
+function escAttr(s) {
+  return esc(s).replace(/"/g,'&quot;');
+}
+
 async function loadRecs() {
   if (!requireAuth()) return;
   const limit=document.getElementById('rc-limit').value;
   const con=document.getElementById('rc-container');
   con.innerHTML='<div class="empty"><span class="spinner"></span> Loading…</div>';
-  const {ok,data}=await api('GET',`/recommend/problems?limit=${limit}`);
-  if (!ok) { con.innerHTML='<p style="color:var(--red)">Failed to load.</p>'; return; }
+  const {ok,data,status}=await api('GET',`/recommend/problems?limit=${limit}&_=${Date.now()}`);
+  if (!ok) {
+    const msg=(data&&data.error)?esc(data.error):'Failed to load.';
+    con.innerHTML=`<p style="color:var(--red)">${msg}${status===429?' Try again later.':''}</p>`;
+    return;
+  }
   const recs=data.recommendations||[];
   if (!recs.length) { con.innerHTML=`<div class="empty"><p style="font-size:1.1rem;margin-bottom:.5rem">No recommendations yet</p><p>Solve more problems to unlock personalized suggestions!</p><button class="btn btn-primary" style="margin-top:1rem" onclick="goTo('solve')">Start solving</button></div>`; return; }
   const cards=recs.map(p=>{
     const diff=(p.difficulty||'').toLowerCase();
-    const badge=diff?`<span class="badge badge-${diff}">${p.difficulty}</span>`:'';
-    const tags=(p.tags||[]).map(t=>`<span class="badge badge-tag">${t}</span>`).join('');
+    const badge=diff?`<span class="badge badge-${diff}">${esc(p.difficulty)}</span>`:'';
+    const tags=(p.tags||[]).map(t=>`<span class="badge badge-tag">${esc(t)}</span>`).join('');
     const prev=esc(p.statement_preview||'');
-    return `<div class="problem-card"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.5rem"><span class="problem-title">${esc(p.title||'Untitled')}</span>${badge}</div><div style="display:flex;flex-wrap:wrap;gap:.2rem">${tags}</div>${prev?`<div class="problem-preview">${prev}</div>`:''}<div class="problem-footer"><span class="problem-source">${esc(p.source||'')}</span><button class="btn btn-primary btn-sm" onclick="startFromRec(\`${(p.statement_preview||p.title||'').replace(/`/g,"'").replace(/\n/g,' ')}\`)">▶ Solve</button></div></div>`;
+    const prefill=escAttr(p.statement_preview||p.title||'');
+    return `<div class="problem-card"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.5rem"><span class="problem-title">${esc(p.title||'Untitled')}</span>${badge}</div><div style="display:flex;flex-wrap:wrap;gap:.2rem">${tags}</div>${prev?`<div class="problem-preview">${prev}</div>`:''}<div class="problem-footer"><span class="problem-source">${esc(p.source||'')}</span><button type="button" class="btn btn-primary btn-sm btn-solve" data-prefill="${prefill}">▶ Solve</button></div></div>`;
   }).join('');
   con.innerHTML=`<div class="problem-grid">${cards}</div>`;
 }
 
-function startFromRec(text) {
+document.getElementById('rc-container').addEventListener('click', (e) => {
+  const btn=e.target.closest('.btn-solve');
+  if (!btn) return;
+  const text=btn.getAttribute('data-prefill')||'';
   goTo('solve');
   document.getElementById('sv-problem').value=text;
   document.getElementById('sv-chars').textContent=text.length;
-}
+});
 
 /* ── Utility ────────────────────────────────────────────────────────────── */
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}

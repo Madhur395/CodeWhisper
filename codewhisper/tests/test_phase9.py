@@ -883,10 +883,11 @@ class TestPlanSpecProgressCases:
         assert refreshed.is_solved is True
         assert refreshed.solved_at is not None
 
-    def test_recommend_excludes_attempted(self, app, db, sample_user):
+    def test_recommend_excludes_solved(self, app, db, sample_user):
         from app.services.recommender import RecommenderService
         from app.models.problem import Problem
         from app.models.session import UserProblemSession
+        from datetime import datetime, timezone
         with app.app_context():
             p_att = Problem(title="Att P", statement="stmt " * 5,
                             tags=["DP"], difficulty="Easy", source="LC")
@@ -895,7 +896,8 @@ class TestPlanSpecProgressCases:
             db.session.add_all([p_att, p_new])
             db.session.commit()
             s = UserProblemSession(user_id=sample_user.id, problem_id=p_att.id,
-                                   problem_text="stmt " * 5)
+                                   problem_text="stmt " * 5, is_solved=True,
+                                   solved_at=datetime.now(timezone.utc))
             db.session.add(s)
             db.session.commit()
             result = RecommenderService().recommend(str(sample_user.id))

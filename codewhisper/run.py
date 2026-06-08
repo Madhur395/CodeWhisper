@@ -1,15 +1,11 @@
-"""
-CodeWhisper — Application Entry Point
-Run with: python run.py  OR  flask run
-"""
-
 from app import create_app
+import traceback
 
-app = create_app()
+try:
+    app = create_app()
+except Exception as e:
+    traceback.print_exc()
+    raise
 
 if __name__ == "__main__":
-    app.run(
-        host="0.0.0.0",
-        port=5000,
-        debug=True
-    )
+    app.run(host="0.0.0.0", port=5000, debug=True)

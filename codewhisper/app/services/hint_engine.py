@@ -1,17 +1,7 @@
 """
 CodeWhisper — Hint Engine Service
-Phase 5: Full implementation.
-
-Orchestrates the full hint lifecycle:
-  1. Problem hashing → Redis cache lookup
-  2. Cache MISS → LLM call → cache result
-  3. DB session creation
-  4. Progressive hint delivery via Redis index pointer
-  5. HintLog persistence for every delivered hint
-  6. Graceful exhaustion & error handling
-
-The service is stateless (all state lives in Redis + PostgreSQL),
-so it can be safely instantiated per-request.
+Uses DB (session.current_hint_level) as source of truth for hint pointer.
+This works correctly with multiple gunicorn workers and no Redis.
 """
 
 import logging
@@ -28,36 +18,14 @@ from app.utils.cache import (
     clear_session_hint_index,
     get_cached_hints,
     get_problem_hash,
-    get_session_hint_index,
-    store_session_hint_index,
 )
 
 logger = logging.getLogger(__name__)
 
-# Maximum number of progressive hints per problem session
 MAX_HINTS = 5
 
 
 class HintEngineService:
-    """
-    Core service that drives CodeWhisper's progressive hint system.
-
-    Methods
-    -------
-    start_session(user_id, problem_text) → dict
-        Begin a new hint session: cache-or-generate hints, create DB record,
-        store hint index in Redis, log + return Hint #1.
-
-    get_next_hint(session_id, user_id) → dict
-        Advance the hint pointer and return the next hint from cache.
-        Returns an exhausted payload when all hints have been delivered.
-
-    get_session_hints(session_id, user_id) → list[dict]
-        Return all hints delivered so far for the given session.
-
-    reset_session(session_id, user_id) → dict
-        Clear Redis hint index so the user can restart from Hint #1.
-    """
 
     def __init__(self):
         self._llm_client = get_llm_client()
@@ -65,196 +33,130 @@ class HintEngineService:
     # ── start_session ──────────────────────────────────────────────────────────
 
     def start_session(self, user_id: str, problem_text: str) -> dict:
-        """
-        Start a new hint session for a DSA problem.
-
-        Flow:
-          1. Normalise & hash the problem text.
-          2. Check Redis for a cached hint sequence.
-          3. On cache MISS → call LLM → store in Redis.
-          4. Create a UserProblemSession row in PostgreSQL.
-          5. Store hint pointer (index=1) in Redis.
-          6. Persist HintLog(level=1) in PostgreSQL.
-          7. Return session_id + Hint #1.
-
-        Args:
-            user_id  (str): UUID string of the authenticated user.
-            problem_text (str): Raw DSA problem pasted by the user.
-
-        Returns:
-            dict: {session_id, hint_level, hint, total_hints}
-        """
         problem_hash = get_problem_hash(problem_text)
 
-        # ── Step 1: Cache lookup ──────────────────────────────────────────────
+        # Get hints (from cache or LLM)
         hints = get_cached_hints(problem_hash)
-        cache_hit = hints is not None
-
-        # ── Step 2: Cache MISS → call LLM ────────────────────────────────────
-        if not cache_hit:
-            logger.info("Cache MISS for hash=%s — calling LLM", problem_hash[:12])
+        if not hints:
+            logger.info("Cache MISS — calling LLM for hints")
             hints = self._llm_client.generate_hints(problem_text)
+            if not hints:
+                from app.llm.groq_client import FALLBACK_HINTS
+                hints = list(FALLBACK_HINTS)
             cache_hints(problem_hash, hints)
         else:
-            logger.info("Cache HIT for hash=%s — skipping LLM call", problem_hash[:12])
+            logger.info("Cache HIT — skipping LLM call")
 
-        # Defensive: if LLM returned nothing, use fallback hints (never crash)
-        if not hints:
-            logger.warning("LLM returned empty hints — using fallback hints")
-            from app.llm.groq_client import FALLBACK_HINTS
-            hints = list(FALLBACK_HINTS)
-            cache_hints(problem_hash, hints)
-
-        # ── Step 3: Persist session ───────────────────────────────────────────
+        # Create session with hint_level=1 in DB
+        uid = _uuid.UUID(str(user_id)) if isinstance(user_id, str) else user_id
         session = UserProblemSession(
-            user_id=_uuid.UUID(user_id) if isinstance(user_id, str) else user_id,
+            user_id=uid,
             problem_text=problem_text,
             hints_requested=1,
-            current_hint_level=1,
+            current_hint_level=1,   # DB is source of truth
         )
         db.session.add(session)
         db.session.commit()
-        logger.debug("Created session id=%s for user=%s", session.id, user_id)
 
-        # ── Step 4: Persist hint index in Redis ───────────────────────────────
-        # Index represents "next hint to deliver" (1-based already consumed)
-        store_session_hint_index(str(session.id), 1)
+        # Log Hint #1
+        try:
+            hint_log = HintLog(session_id=session.id, hint_level=1, hint_text=hints[0])
+            db.session.add(hint_log)
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            logger.warning("HintLog #1 skipped (duplicate?): %s", e)
 
-        # ── Step 5: Log Hint #1 to DB ─────────────────────────────────────────
-        hint_log = HintLog(
-            session_id=session.id,
-            hint_level=1,
-            hint_text=hints[0],
-        )
-        db.session.add(hint_log)
-        db.session.commit()
+        logger.info("Session %s created, hint 1 delivered", session.id)
 
         return {
-            "session_id": str(session.id),
-            "hint_level": 1,
-            "hint": hints[0],
+            "session_id":  str(session.id),
+            "hint_level":  1,
+            "hint":        hints[0],
             "total_hints": len(hints),
-            "exhausted": False,
+            "exhausted":   False,
         }
 
     # ── get_next_hint ──────────────────────────────────────────────────────────
 
     def get_next_hint(self, session_id: str, user_id: str) -> dict:
-        """
-        Deliver the next progressive hint for an existing session.
-
-        Flow:
-          1. Load session from DB (404 if not found or not owned by user).
-          2. Retrieve current hint index from Redis.
-          3. If index >= MAX_HINTS → return exhausted payload (no DB changes).
-          4. Fetch hint from Redis cache (regenerate if cache expired).
-          5. Advance the Redis index pointer.
-          6. Update session counters in DB.
-          7. Persist HintLog for the new hint level.
-          8. Return the hint payload.
-
-        Args:
-            session_id (str): UUID string of the session.
-            user_id    (str): UUID string of the authenticated user.
-
-        Returns:
-            dict: {session_id, hint_level, hint, total_hints, exhausted}
-                  or {message, exhausted: True} when all hints delivered.
-        """
-        # ── Step 1: Load + authorise session ─────────────────────────────────
         session = self._get_session(session_id, user_id)
 
-        # ── Step 2: Current pointer from Redis ───────────────────────────────
-        current_index = get_session_hint_index(session_id)
-        logger.debug(
-            "get_next_hint: session=%s current_index=%d", session_id[:8], current_index
-        )
+        # current_hint_level stored in DB = last hint delivered
+        # next hint to deliver = current_hint_level + 1 (but after start it's already 1)
+        # So the NEXT index into the hints list = current_hint_level (0-based array)
+        current_level = session.current_hint_level  # e.g. 1 after start_session
 
-        # ── Step 3: Exhaustion check ──────────────────────────────────────────
-        if current_index >= MAX_HINTS:
+        # Exhaustion check
+        if current_level >= MAX_HINTS:
             return {
-                "session_id": session_id,
-                "message": "You've seen all available hints! Try solving it now. 💪",
-                "exhausted": True,
-                "hint_level": current_index,
+                "session_id":  session_id,
+                "hint_level":  current_level,
                 "total_hints": MAX_HINTS,
+                "exhausted":   True,
+                "message":     "You've seen all hints! Try solving it now. 💪",
             }
 
-        # ── Step 4: Fetch hints from cache (re-generate if stale) ────────────
+        # Get hints from cache
         problem_hash = get_problem_hash(session.problem_text)
         hints = get_cached_hints(problem_hash)
-
         if hints is None:
-            # Cache evicted (TTL expired) — regenerate without extra LLM cost
-            logger.warning(
-                "Hint cache expired for session=%s — regenerating", session_id[:8]
-            )
+            logger.warning("Cache expired for session %s — regenerating", session_id[:8])
             hints = self._llm_client.generate_hints(session.problem_text)
+            if not hints:
+                from app.llm.groq_client import FALLBACK_HINTS
+                hints = list(FALLBACK_HINTS)
             cache_hints(problem_hash, hints)
 
-        # Safety guard
-        if current_index >= len(hints):
+        # Safety: clamp to available hints
+        if current_level >= len(hints):
             return {
-                "session_id": session_id,
-                "message": "You've seen all available hints! Try solving it now. 💪",
-                "exhausted": True,
-                "hint_level": current_index,
+                "session_id":  session_id,
+                "hint_level":  current_level,
                 "total_hints": len(hints),
+                "exhausted":   True,
+                "message":     "You've seen all hints! Try solving it now. 💪",
             }
 
-        next_hint_text = hints[current_index]
-        next_index = current_index + 1
+        # Deliver next hint (current_level is 0-based index into hints list)
+        next_hint_text = hints[current_level]
+        next_level     = current_level + 1   # 1-based level number
 
-        # ── Step 5: Advance Redis pointer ────────────────────────────────────
-        store_session_hint_index(session_id, next_index)
-
-        # ── Step 6: Update session counters in DB ─────────────────────────────
-        session.hints_requested = (session.hints_requested or 0) + 1
-        session.current_hint_level = next_index
+        # Update DB atomically (DB = source of truth, works across all workers)
+        session.hints_requested  = (session.hints_requested or 0) + 1
+        session.current_hint_level = next_level
         db.session.commit()
 
-        # ── Step 7: Persist HintLog (ignore duplicate if already logged) ─────
+        # Log hint (ignore duplicate)
         try:
             hint_log = HintLog(
                 session_id=session.id,
-                hint_level=next_index,
+                hint_level=next_level,
                 hint_text=next_hint_text,
             )
             db.session.add(hint_log)
             db.session.commit()
-        except Exception as log_err:
+        except Exception as e:
             db.session.rollback()
-            logger.warning("HintLog insert skipped (likely duplicate): %s", log_err)
+            logger.warning("HintLog insert skipped (duplicate?): %s", e)
 
-        exhausted = next_index >= MAX_HINTS
-        logger.debug(
-            "Delivered hint level=%d exhausted=%s session=%s",
-            next_index, exhausted, session_id[:8],
-        )
+        exhausted = next_level >= MAX_HINTS
+
+        logger.info("Session %s: delivered hint level %d, exhausted=%s",
+                    session_id[:8], next_level, exhausted)
 
         return {
-            "session_id": session_id,
-            "hint_level": next_index,
-            "hint": next_hint_text,
+            "session_id":  session_id,
+            "hint_level":  next_level,
+            "hint":        next_hint_text,
             "total_hints": len(hints),
-            "exhausted": exhausted,
+            "exhausted":   exhausted,
         }
 
     # ── get_session_hints ──────────────────────────────────────────────────────
 
     def get_session_hints(self, session_id: str, user_id: str) -> list[dict]:
-        """
-        Return all hints delivered so far for a session, ordered by hint_level.
-
-        Args:
-            session_id (str): UUID string of the session.
-            user_id    (str): UUID string of the authenticated user.
-
-        Returns:
-            list[dict]: [{level, hint, delivered_at}, ...]
-        """
         session = self._get_session(session_id, user_id)
-
         logs = (
             HintLog.query
             .filter_by(session_id=session.id)
@@ -263,8 +165,8 @@ class HintEngineService:
         )
         return [
             {
-                "level": h.hint_level,
-                "hint": h.hint_text,
+                "level":        h.hint_level,
+                "hint":         h.hint_text,
                 "delivered_at": h.delivered_at.isoformat() if h.delivered_at else None,
             }
             for h in logs
@@ -273,58 +175,27 @@ class HintEngineService:
     # ── reset_session ──────────────────────────────────────────────────────────
 
     def reset_session(self, session_id: str, user_id: str) -> dict:
-        """
-        Reset a session's hint pointer back to the beginning.
-
-        Clears the Redis index so the user will receive Hint #1 again
-        on the next get_next_hint() call.  Does NOT delete hint logs.
-
-        Args:
-            session_id (str): UUID string of the session.
-            user_id    (str): UUID string of the authenticated user.
-
-        Returns:
-            dict: {session_id, message}
-        """
         session = self._get_session(session_id, user_id)
-        clear_session_hint_index(session_id)
 
-        # Delete existing hint logs so levels can be re-delivered without
-        # hitting the (session_id, hint_level) unique constraint
+        clear_session_hint_index(session_id)   # clear Redis too if present
+
+        # Delete existing hint logs so unique constraint won't block re-delivery
         HintLog.query.filter_by(session_id=session.id).delete()
 
-        # Reset DB counters
-        session.hints_requested = 0
+        session.hints_requested    = 0
         session.current_hint_level = 0
         db.session.commit()
 
-        return {
-            "session_id": session_id,
-            "message": "Session reset. You'll start from Hint #1 again.",
-        }
+        return {"session_id": session_id, "message": "Session reset. Starting from Hint #1."}
 
-    # ── Private helpers ────────────────────────────────────────────────────────
+    # ── private ────────────────────────────────────────────────────────────────
 
     def _get_session(self, session_id: str, user_id: str) -> UserProblemSession:
-        """
-        Load a UserProblemSession owned by `user_id`.
-
-        Accepts both string UUIDs and UUID objects for both arguments.
-        Returns 404 if the session doesn't exist or belongs to another user.
-
-        Args:
-            session_id (str | UUID): Session primary key.
-            user_id    (str | UUID): Requesting user's primary key.
-
-        Returns:
-            UserProblemSession
-        """
         try:
             sid = _uuid.UUID(str(session_id))
             uid = _uuid.UUID(str(user_id))
-        except ValueError:
+        except (ValueError, AttributeError):
             abort(404, description="Invalid session or user ID.")
-
         session = UserProblemSession.query.filter_by(id=sid, user_id=uid).first()
         if session is None:
             abort(404, description="Session not found.")

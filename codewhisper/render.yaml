@@ -1,0 +1,9 @@
+﻿services:
+  - type: web
+    name: CodeWhisper
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    startCommand: python run.py
+    envVars:
+      - key: FLASK_ENV
+        value: production

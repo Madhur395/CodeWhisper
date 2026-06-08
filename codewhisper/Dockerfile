@@ -30,4 +30,4 @@ ENV FLASK_APP=run.py
 ENV FLASK_ENV=development
 
 # Run the application
-CMD ["python", "run.py"]
+CMD ["sh", "-c", "flask db upgrade && python run.py"]

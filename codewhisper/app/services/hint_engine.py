@@ -213,14 +213,18 @@ class HintEngineService:
         session.current_hint_level = next_index
         db.session.commit()
 
-        # ── Step 7: Persist HintLog ───────────────────────────────────────────
-        hint_log = HintLog(
-            session_id=session.id,
-            hint_level=next_index,
-            hint_text=next_hint_text,
-        )
-        db.session.add(hint_log)
-        db.session.commit()
+        # ── Step 7: Persist HintLog (ignore duplicate if already logged) ─────
+        try:
+            hint_log = HintLog(
+                session_id=session.id,
+                hint_level=next_index,
+                hint_text=next_hint_text,
+            )
+            db.session.add(hint_log)
+            db.session.commit()
+        except Exception as log_err:
+            db.session.rollback()
+            logger.warning("HintLog insert skipped (likely duplicate): %s", log_err)
 
         exhausted = next_index >= MAX_HINTS
         logger.debug(

@@ -197,7 +197,13 @@
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> Loading…';
 
-    const { ok, data } = await CW.api('GET', `/hints/next/${sessionId}`);
+    let _resp = await CW.api('GET', `/hints/next/${sessionId}`);
+    // Retry once on transient server error (e.g., duplicate DB insert race)
+    if (!_resp.ok && _resp.status === 500) {
+      await new Promise(r => setTimeout(r, 1200));
+      _resp = await CW.api('GET', `/hints/next/${sessionId}`);
+    }
+    const { ok, data } = _resp;
 
     btn.disabled = false;
     btn.textContent = '➡ Next Hint';

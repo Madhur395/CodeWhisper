@@ -8,4 +8,4 @@ RUN printf 'from run import app\n' > /app/wsgi.py
 EXPOSE 5000
 ENV FLASK_APP=run.py
 ENV FLASK_ENV=production
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "wsgi:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--chdir", "/app", "run:app"]

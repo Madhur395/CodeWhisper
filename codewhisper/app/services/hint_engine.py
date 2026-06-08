@@ -100,9 +100,9 @@ class HintEngineService:
 
         # Defensive: if LLM returned nothing, use fallback hints (never crash)
         if not hints:
-            logger.error("Hint list is empty after LLM call — using fallback hints")
+            logger.warning("LLM returned empty hints — using fallback hints")
             from app.llm.groq_client import FALLBACK_HINTS
-            hints = FALLBACK_HINTS
+            hints = list(FALLBACK_HINTS)
             cache_hints(problem_hash, hints)
 
         # ── Step 3: Persist session ───────────────────────────────────────────

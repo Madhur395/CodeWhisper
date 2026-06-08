@@ -120,10 +120,28 @@ tbody tr:hover{background:var(--surface2)}
 .char-count{font-size:.74rem;color:var(--muted);text-align:right;margin-top:.25rem}
 footer{text-align:center;padding:1.2rem;font-size:.78rem;color:var(--muted);border-top:1px solid var(--border)}
 
-@media(max-width:640px){main{padding:1rem .75rem}nav{padding:.75rem .9rem}.nav-brand{font-size:1rem}}
+/* ── API config bar ─────────────────────────────────────────────────────── */
+.api-bar{background:rgba(108,99,255,.08);border-bottom:1px solid var(--border);padding:.5rem 1.5rem;font-size:.8rem;color:var(--muted);display:flex;align-items:center;gap:.75rem;flex-wrap:wrap}
+.api-bar input{width:320px;padding:.3rem .7rem;font-size:.8rem;border-radius:6px;flex-shrink:0}
+.api-bar .api-status{font-weight:600}
+.api-status.ok{color:var(--green)}
+.api-status.err{color:var(--red)}
+
+@media(max-width:640px){main{padding:1rem .75rem}nav{padding:.75rem .9rem}.nav-brand{font-size:1rem}.api-bar input{width:100%}}
 </style>
 </head>
 <body>
+
+<!-- ── API Config Bar ─────────────────────────────────────────────────────── -->
+<div class="api-bar">
+  <span>🔗 API Server:</span>
+  <input type="text" id="api-url-input" value="http://localhost:5000" placeholder="http://localhost:5000"/>
+  <button class="btn btn-sm btn-secondary" onclick="setApiUrl()">Connect</button>
+  <span id="api-status" class="api-status">⬤ Not tested</span>
+  <span style="margin-left:auto;font-size:.75rem">
+    💡 Run <code style="background:var(--surface2);padding:.1rem .35rem;border-radius:4px">python run_dev.py</code> in your terminal, then click Connect
+  </span>
+</div>
 
 <!-- ── Navbar ─────────────────────────────────────────────────────────────── -->
 <nav>
@@ -269,15 +287,35 @@ footer{text-align:center;padding:1.2rem;font-size:.78rem;color:var(--muted);bord
 /* ══════════════════════════════════════════════════════════════════════════
    CONFIG & STATE
 ══════════════════════════════════════════════════════════════════════════ */
-// Same-origin API — no separate server URL in the UI
-localStorage.removeItem('cw_api');
-const API = '';
+let API = localStorage.getItem('cw_api') || 'http://localhost:5000';
 let TOKEN = localStorage.getItem('cw_token');
 let USER  = JSON.parse(localStorage.getItem('cw_user') || 'null');
 let SESSION_ID = null, HINT_LEVEL = 0, EXHAUSTED = false, IS_SOLVED = false;
 const MAX_HINTS = 5;
 
+document.getElementById('api-url-input').value = API;
+
 /* ── API helpers ────────────────────────────────────────────────────────── */
+function setApiUrl() {
+  API = document.getElementById('api-url-input').value.trim().replace(/\/$/, '');
+  localStorage.setItem('cw_api', API);
+  testConnection();
+}
+
+async function testConnection() {
+  const el = document.getElementById('api-status');
+  el.textContent = '⬤ Testing…'; el.className = 'api-status';
+  try {
+    const r = await fetch(API + '/health', {signal: AbortSignal.timeout(4000)});
+    const d = await r.json();
+    if (d.status === 'ok') { el.textContent = '⬤ Connected ✓'; el.className = 'api-status ok'; }
+    else throw new Error('bad response');
+  } catch(e) {
+    el.textContent = '⬤ Cannot reach server'; el.className = 'api-status err';
+    flash('Cannot reach API at ' + API + '. Make sure the server is running.', 'err');
+  }
+}
+
 async function api(method, path, body) {
   const opts = { method, headers: {'Content-Type':'application/json', 'Authorization':'Bearer '+(TOKEN||'')} };
   if (body) opts.body = JSON.stringify(body);
@@ -446,13 +484,12 @@ async function getNextHint() {
   const {ok, data} = await api('GET', `/hints/next/${SESSION_ID}`);
   btn.disabled=false; btn.textContent='➡ Next Hint';
   if (!ok) { flash(data.error||'Failed to load hint.','err'); return; }
-  if (data.hint) { HINT_LEVEL=data.hint_level; appendHint(data.hint, data.hint_level); }
   if (data.exhausted) {
     EXHAUSTED=true;
     const box=document.createElement('div'); box.className='exhausted-box';
     box.textContent=`🎯 You've seen all ${MAX_HINTS} hints — time to solve it! 💪`;
     document.getElementById('sv-hints').appendChild(box);
-  }
+  } else { HINT_LEVEL=data.hint_level; appendHint(data.hint, data.hint_level); }
   updateSolveUI();
 }
 
@@ -502,52 +539,38 @@ function updateSolveUI() {
 /* ══════════════════════════════════════════════════════════════════════════
    RECOMMENDATIONS
 ══════════════════════════════════════════════════════════════════════════ */
-function escAttr(s) {
-  return esc(s).replace(/"/g,'&quot;');
-}
-
 async function loadRecs() {
   if (!requireAuth()) return;
   const limit=document.getElementById('rc-limit').value;
   const con=document.getElementById('rc-container');
   con.innerHTML='<div class="empty"><span class="spinner"></span> Loading…</div>';
-  const {ok,data,status}=await api('GET',`/recommend/problems?limit=${limit}&_=${Date.now()}`);
-  if (!ok) {
-    const msg=(data&&data.error)?esc(data.error):'Failed to load.';
-    con.innerHTML=`<p style="color:var(--red)">${msg}${status===429?' Try again later.':''}</p>`;
-    return;
-  }
+  const {ok,data}=await api('GET',`/recommend/problems?limit=${limit}`);
+  if (!ok) { con.innerHTML='<p style="color:var(--red)">Failed to load.</p>'; return; }
   const recs=data.recommendations||[];
   if (!recs.length) { con.innerHTML=`<div class="empty"><p style="font-size:1.1rem;margin-bottom:.5rem">No recommendations yet</p><p>Solve more problems to unlock personalized suggestions!</p><button class="btn btn-primary" style="margin-top:1rem" onclick="goTo('solve')">Start solving</button></div>`; return; }
   const cards=recs.map(p=>{
     const diff=(p.difficulty||'').toLowerCase();
-    const badge=diff?`<span class="badge badge-${diff}">${esc(p.difficulty)}</span>`:'';
-    const tags=(p.tags||[]).map(t=>`<span class="badge badge-tag">${esc(t)}</span>`).join('');
+    const badge=diff?`<span class="badge badge-${diff}">${p.difficulty}</span>`:'';
+    const tags=(p.tags||[]).map(t=>`<span class="badge badge-tag">${t}</span>`).join('');
     const prev=esc(p.statement_preview||'');
-    const prefill=escAttr(p.statement_preview||p.title||'');
-    return `<div class="problem-card"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.5rem"><span class="problem-title">${esc(p.title||'Untitled')}</span>${badge}</div><div style="display:flex;flex-wrap:wrap;gap:.2rem">${tags}</div>${prev?`<div class="problem-preview">${prev}</div>`:''}<div class="problem-footer"><span class="problem-source">${esc(p.source||'')}</span><button type="button" class="btn btn-primary btn-sm btn-solve" data-prefill="${prefill}">▶ Solve</button></div></div>`;
+    return `<div class="problem-card"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.5rem"><span class="problem-title">${esc(p.title||'Untitled')}</span>${badge}</div><div style="display:flex;flex-wrap:wrap;gap:.2rem">${tags}</div>${prev?`<div class="problem-preview">${prev}</div>`:''}<div class="problem-footer"><span class="problem-source">${esc(p.source||'')}</span><button class="btn btn-primary btn-sm" onclick="startFromRec(\`${(p.statement_preview||p.title||'').replace(/`/g,"'").replace(/\n/g,' ')}\`)">▶ Solve</button></div></div>`;
   }).join('');
   con.innerHTML=`<div class="problem-grid">${cards}</div>`;
 }
 
-document.getElementById('rc-container').addEventListener('click', (e) => {
-  const btn=e.target.closest('.btn-solve');
-  if (!btn) return;
-  const text=btn.getAttribute('data-prefill')||'';
+function startFromRec(text) {
   goTo('solve');
   document.getElementById('sv-problem').value=text;
   document.getElementById('sv-chars').textContent=text.length;
-});
+}
 
 /* ── Utility ────────────────────────────────────────────────────────────── */
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 
 /* ── Init ───────────────────────────────────────────────────────────────── */
 (function init() {
-  if (window.location.protocol === 'file:') {
-    flash('Open CodeWhisper through the running app in your browser, not as a saved HTML file.', 'err');
-  }
   renderNav();
+  testConnection();
   if (TOKEN && USER) goTo('dashboard');
   else goTo('login');
 })();

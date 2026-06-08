@@ -2,14 +2,14 @@ services:
   - type: web
     name: codewhisper
     runtime: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn run:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120 --log-level info
+    buildCommand: pip install -r codewhisper/requirements.txt
+    startCommand: cd codewhisper && gunicorn run:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120 --log-level info
     healthCheckPath: /health
     envVars:
       - key: FLASK_ENV
         value: production
       - key: PYTHON_VERSION
-        value: 3.11.0
+        value: "3.11.0"
       - key: SECRET_KEY
         generateValue: true
       - key: JWT_SECRET_KEY
@@ -24,9 +24,6 @@ services:
         value: llama-3.3-70b-versatile
       - key: CORS_ORIGINS
         value: "*"
-      # Set these manually in the Render dashboard:
-      # - key: GROQ_API_KEY
-      #   value: gsk_...
 
 databases:
   - name: codewhisper-db

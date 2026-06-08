@@ -16,7 +16,6 @@ from collections import Counter
 
 from app.models.problem import Problem
 from app.models.session import UserProblemSession
-from app.utils.problem_tags import tags_for_session
 
 logger = logging.getLogger(__name__)
 
@@ -55,34 +54,31 @@ class RecommenderService:
         uid = self._parse_uuid(user_id)
         limit = max(1, min(limit, 20))  # clamp to [1, 20]
 
-        # ── Step 1: Collect solved problem IDs (exclude from Discover) ───────
-        # Only hide problems the user marked solved — not every hint session,
-        # otherwise the bank drains to 0–2 items after casual testing.
+        # ── Step 1: Collect attempted problem IDs ────────────────────────────
         sessions = UserProblemSession.query.filter_by(user_id=uid).all()
 
-        excluded_ids = {
+        attempted_ids = {
             s.problem_id
             for s in sessions
-            if s.problem_id is not None and s.is_solved
+            if s.problem_id is not None
         }
 
         # ── Step 2: Build user tag profile ───────────────────────────────────
         tag_profile: Counter = Counter()
         for s in sessions:
-            session_tags = tags_for_session(s)
-            if session_tags:
-                tag_profile.update(session_tags)
+            if s.problem and s.problem.tags:
+                tag_profile.update(s.problem.tags)
 
         logger.debug(
-            "User %s solved_excluded=%d tag_profile=%s",
-            user_id, len(excluded_ids), dict(tag_profile.most_common(5))
+            "User %s attempted=%d tag_profile=%s",
+            user_id, len(attempted_ids), dict(tag_profile.most_common(5))
         )
 
-        # ── Step 3: Fetch problems not yet solved ───────────────────────────
+        # ── Step 3: Fetch all unseen problems ─────────────────────────────────
         candidates_query = Problem.query
-        if excluded_ids:
+        if attempted_ids:
             candidates_query = candidates_query.filter(
-                Problem.id.notin_(list(excluded_ids))
+                Problem.id.notin_(list(attempted_ids))
             )
         candidates = candidates_query.all()
 
@@ -90,19 +86,16 @@ class RecommenderService:
             logger.info("No unseen problems available for user %s", user_id)
             return []
 
-        # ── Step 4 & 5: Score, shuffle a wider pool, then pick `limit` ───────
+        # ── Step 4 & 5: Score and sort ────────────────────────────────────────
         if tag_profile:
-            ranked = self._score_problems(candidates, tag_profile)
+            scored = self._score_problems(candidates, tag_profile)
         else:
-            ranked = list(candidates)
-            random.shuffle(ranked)
-
-        pool_size = min(len(ranked), max(limit * 4, limit + 8))
-        pool = list(ranked[:pool_size])
-        random.shuffle(pool)
+            # No tag history — random shuffle of all unseen problems
+            random.shuffle(candidates)
+            scored = candidates[:limit]
 
         # ── Step 6: Serialise ─────────────────────────────────────────────────
-        return [self._to_card(p) for p in pool[:limit]]
+        return [self._to_card(p) for p in scored[:limit]]
 
     # ── Private helpers ────────────────────────────────────────────────────────
 

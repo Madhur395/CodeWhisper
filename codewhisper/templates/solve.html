@@ -204,13 +204,12 @@
 
     if (!ok) { CW.flash(data.error || 'Failed to fetch next hint.', 'error'); return; }
 
-    if (data.hint) {
-      hintLevel = data.hint_level;
-      appendHint(data.hint, data.hint_level);
-    }
     if (data.exhausted) {
       exhausted = true;
       renderExhausted();
+    } else {
+      hintLevel = data.hint_level;
+      appendHint(data.hint, data.hint_level);
     }
     updateUI();
   }
@@ -280,7 +279,7 @@
     const card = document.createElement('div');
     card.className = 'hint-card';
     card.innerHTML = `
-      <div class="hint-level">💡 Hint ${level} of ${totalHints}</div>
+      <div class="hint-level">💡 Hint ${level} of ${MAX_HINTS}</div>
       <div class="hint-text">${escHtml(text)}</div>`;
     panel.appendChild(card);
     card.scrollIntoView({ behavior:'smooth', block:'nearest' });
@@ -288,10 +287,9 @@
 
   function renderExhausted() {
     const panel = document.getElementById('hint-panel');
-    if (panel.querySelector('.exhausted-box')) return;
     const box   = document.createElement('div');
     box.className = 'exhausted-box';
-    box.innerHTML = `🎯 You've seen all ${totalHints} hints! Time to try solving it yourself. 💪`;
+    box.innerHTML = `🎯 You've seen all ${MAX_HINTS} hints! Time to try solving it yourself. 💪`;
     panel.appendChild(box);
     document.getElementById('next-hint-wrap').style.display = 'none';
   }

@@ -1,6 +1,6 @@
 """
 CodeWhisper — Application Configuration
-Loads settings from environment variables via python-dotenv.
+Production-hardened: all env vars, DATABASE_URL auto-fix, safe defaults.
 """
 
 import os
@@ -9,54 +9,75 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-class Config:
-    SECRET_KEY  = os.getenv("SECRET_KEY", "dev-fallback-secret-change-in-prod")
-    FLASK_ENV   = os.getenv("FLASK_ENV", "development")
+def _db_url():
+    """Return DATABASE_URL, fixing postgres:// → postgresql:// for Render."""
+    url = os.getenv("DATABASE_URL", "")
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql://", 1)
+    return url or None
 
-    SQLALCHEMY_DATABASE_URI    = os.getenv(
-        "DATABASE_URL",
-        "sqlite:///codewhisper_dev.db"
-        )
+
+class Config:
+    # Flask
+    SECRET_KEY  = os.getenv("SECRET_KEY", "dev-fallback-CHANGE-IN-PROD")
+    FLASK_ENV   = os.getenv("FLASK_ENV", "production")
+
+    # Database
+    SQLALCHEMY_DATABASE_URI    = _db_url()
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ECHO            = False
 
-    REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    # Redis (optional — falls back to in-memory if unavailable)
+    REDIS_URL = os.getenv("REDIS_URL", "")
 
-    JWT_SECRET_KEY           = os.getenv("JWT_SECRET_KEY", "jwt-fallback-secret-change-in-prod")
+    # JWT
+    JWT_SECRET_KEY           = os.getenv("JWT_SECRET_KEY", "jwt-fallback-CHANGE-IN-PROD")
     JWT_ACCESS_TOKEN_EXPIRES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRES", 3600))
     JWT_TOKEN_LOCATION       = ["headers"]
     JWT_HEADER_NAME          = "Authorization"
     JWT_HEADER_TYPE          = "Bearer"
 
-    LLM_PROVIDER    = os.getenv("LLM_PROVIDER", "groq")
-    GROQ_API_KEY    = os.getenv("GROQ_API_KEY")
-    GROQ_MODEL      = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-    OPENAI_API_KEY  = os.getenv("OPENAI_API_KEY")
-    OPENAI_MODEL    = os.getenv("OPENAI_MODEL", "gpt-4o")
-    ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+    # LLM
+    LLM_PROVIDER      = os.getenv("LLM_PROVIDER", "groq")
+    GROQ_API_KEY      = os.getenv("GROQ_API_KEY", "")
+    GROQ_MODEL        = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    OPENAI_API_KEY    = os.getenv("OPENAI_API_KEY", "")
+    OPENAI_MODEL      = os.getenv("OPENAI_MODEL", "gpt-4o")
+    ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
     CLAUDE_MODEL      = os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
 
+    # CORS
     CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*")
 
 
 class DevelopmentConfig(Config):
     DEBUG = True
-
-
-class StandaloneConfig(Config):
-    """
-    No-dependency dev mode: SQLite file + in-memory rate limiter.
-    Used when PostgreSQL/Redis are not available (local quick-start).
-    """
-    import os as _os
-    _BASE = _os.path.abspath(_os.path.join(_os.path.dirname(__file__), ".."))
-    DEBUG = True
-    SQLALCHEMY_DATABASE_URI  = f"sqlite:///{_BASE}/codewhisper_dev.db"
-    RATELIMIT_STORAGE_URI    = "memory://"
+    FLASK_ENV = "development"
 
 
 class ProductionConfig(Config):
     DEBUG = False
+    FLASK_ENV = "production"
+    # Stricter settings in production
+    SQLALCHEMY_ECHO = False
+
+
+class StandaloneConfig(Config):
+    """SQLite + in-memory fallbacks for local dev without Docker."""
+    DEBUG = True
+    FLASK_ENV = "development"
+
+    @classmethod
+    def _sqlite_path(cls):
+        base = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        return f"sqlite:///{base}/codewhisper_dev.db"
+
+    SQLALCHEMY_DATABASE_URI = None   # set after class in __init_subclass__ below
+    RATELIMIT_STORAGE_URI   = "memory://"
+
+
+# Fix: set SQLite URI after class is defined (avoids class-level import side effects)
+StandaloneConfig.SQLALCHEMY_DATABASE_URI = StandaloneConfig._sqlite_path()
 
 
 class TestingConfig(Config):
@@ -78,5 +99,6 @@ config_map = {
 
 
 def get_config():
-    env = os.getenv("FLASK_ENV", "development").lower()
-    return config_map.get(env, DevelopmentConfig)
+    """Return the correct config class based on FLASK_ENV."""
+    env = os.getenv("FLASK_ENV", "production").lower()
+    return config_map.get(env, ProductionConfig)

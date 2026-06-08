@@ -31,27 +31,11 @@ from app.utils.cache import (
     get_session_hint_index,
     store_session_hint_index,
 )
-from app.utils.problem_tags import find_problem_for_text
 
 logger = logging.getLogger(__name__)
 
 # Maximum number of progressive hints per problem session
 MAX_HINTS = 5
-
-
-def _normalize_hints(hints: list | None) -> list[str]:
-    """
-    Ensure exactly MAX_HINTS non-empty hint strings.
-    Pads with generic fallbacks when the LLM or cache returns fewer than 5.
-    """
-    from app.llm.groq_client import FALLBACK_HINTS
-
-    valid: list[str] = []
-    if hints:
-        valid = [h.strip() for h in hints if isinstance(h, str) and h.strip()]
-    while len(valid) < MAX_HINTS:
-        valid.append(FALLBACK_HINTS[len(valid) % len(FALLBACK_HINTS)])
-    return valid[:MAX_HINTS]
 
 
 class HintEngineService:
@@ -110,22 +94,20 @@ class HintEngineService:
         if not cache_hit:
             logger.info("Cache MISS for hash=%s — calling LLM", problem_hash[:12])
             hints = self._llm_client.generate_hints(problem_text)
+            cache_hints(problem_hash, hints)
         else:
             logger.info("Cache HIT for hash=%s — skipping LLM call", problem_hash[:12])
 
-        hints = _normalize_hints(hints)
-        cache_hints(problem_hash, hints)
-
-        # Defensive: ensure we have something to return
+        # Defensive: if LLM returned nothing, use fallback hints (never crash)
         if not hints:
-            logger.error("Hint list is empty after LLM call — aborting")
-            abort(500, description="Failed to generate hints. Please try again.")
+            logger.error("Hint list is empty after LLM call — using fallback hints")
+            from app.llm.groq_client import FALLBACK_HINTS
+            hints = FALLBACK_HINTS
+            cache_hints(problem_hash, hints)
 
         # ── Step 3: Persist session ───────────────────────────────────────────
-        matched_problem = find_problem_for_text(problem_text)
         session = UserProblemSession(
             user_id=_uuid.UUID(user_id) if isinstance(user_id, str) else user_id,
-            problem_id=matched_problem.id if matched_problem else None,
             problem_text=problem_text,
             hints_requested=1,
             current_hint_level=1,
@@ -210,10 +192,7 @@ class HintEngineService:
             hints = self._llm_client.generate_hints(session.problem_text)
             cache_hints(problem_hash, hints)
 
-        hints = _normalize_hints(hints)
-        cache_hints(problem_hash, hints)
-
-        # Safety guard (should not trigger after normalization)
+        # Safety guard
         if current_index >= len(hints):
             return {
                 "session_id": session_id,

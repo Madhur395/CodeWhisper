@@ -80,25 +80,21 @@ class GroqClient(BaseLLMClient):
     """
 
     def __init__(self) -> None:
-        api_key = os.getenv("GROQ_API_KEY", "")
+        api_key = os.getenv("GROQ_API_KEY", "").strip()
         if not api_key or api_key.startswith("gsk_REPLACE"):
             logger.warning(
-                "GROQ_API_KEY is not set or is a placeholder. "
-                "Set it in .env to enable Groq hint generation."
+                "GROQ_API_KEY is not set. Hint generation will use fallback hints."
             )
+            # Use a safe placeholder — SDK won't crash, calls will fail gracefully
+            api_key = "gsk_placeholder_key_fallback"
 
-        self._api_key = api_key or "gsk_placeholder"
-        self._client = None  # lazy — avoids crashing callers when SDK/env misconfigured
+        # Point the OpenAI SDK at Groq's base URL
+        self._client = OpenAI(
+            api_key=api_key,
+            base_url=GROQ_BASE_URL,
+        )
         self.model = os.getenv("GROQ_MODEL", DEFAULT_MODEL)
         logger.debug("GroqClient initialised — model=%s", self.model)
-
-    def _get_client(self) -> OpenAI:
-        if self._client is None:
-            self._client = OpenAI(
-                api_key=self._api_key,
-                base_url=GROQ_BASE_URL,
-            )
-        return self._client
 
     # ── Public interface ──────────────────────────────────────────────────────
 
@@ -128,12 +124,6 @@ class GroqClient(BaseLLMClient):
                 hints = self._validate_hints(hints)
                 logger.info("Groq generated hints successfully on attempt %d", attempt)
                 return hints
-
-            except TypeError as exc:
-                # e.g. openai/httpx version mismatch during client init
-                last_error = exc
-                logger.warning("Groq client init error: %s", exc)
-                break
 
             except (RateLimitError, APITimeoutError, APIConnectionError) as exc:
                 # Transient — worth retrying with backoff
@@ -172,7 +162,7 @@ class GroqClient(BaseLLMClient):
             json.JSONDecodeError: If the response is not valid JSON.
             openai.*: Any SDK exception propagates to generate_hints() for handling.
         """
-        response = self._get_client().chat.completions.create(
+        response = self._client.chat.completions.create(
             model=self.model,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
@@ -201,13 +191,13 @@ class GroqClient(BaseLLMClient):
             raise ValueError(
                 f"Expected a JSON array, got {type(parsed).__name__!r}"
             )
-        if len(parsed) < 3:
+        if len(parsed) != 5:
             raise ValueError(
-                f"Expected at least 3 hints, got {len(parsed)}"
+                f"Expected exactly 5 hints, got {len(parsed)}"
             )
-        cleaned = [h.strip() for h in parsed if isinstance(h, str) and h.strip()]
-        if len(cleaned) < 3:
-            raise ValueError("Too few valid hint strings in LLM response")
-        while len(cleaned) < 5:
-            cleaned.append(FALLBACK_HINTS[len(cleaned) % len(FALLBACK_HINTS)])
-        return cleaned[:5]
+        for i, hint in enumerate(parsed, start=1):
+            if not isinstance(hint, str) or not hint.strip():
+                raise ValueError(
+                    f"Hint #{i} is not a non-empty string: {hint!r}"
+                )
+        return [h.strip() for h in parsed]

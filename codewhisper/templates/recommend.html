@@ -53,18 +53,12 @@
 
 {% block scripts %}
 <script>
-  function escHtml(s) {
-    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  }
-
-  function escAttr(s) {
-    return escHtml(s).replace(/"/g,'&quot;');
-  }
+  if (!CW.requireAuth()) void 0;
 
   function diffBadge(d) {
     if (!d) return '';
     const cls = d.toLowerCase();
-    return `<span class="badge badge-${cls}">${escHtml(d)}</span>`;
+    return `<span class="badge badge-${cls}">${d}</span>`;
   }
 
   async function loadRecommendations() {
@@ -72,14 +66,10 @@
     const container = document.getElementById('problems-container');
     container.innerHTML = '<div class="loading-grid"><span class="spinner"></span> Loading…</div>';
 
-    const { ok, data, status } = await CW.api(
-      'GET',
-      `/recommend/problems?limit=${limit}&_=${Date.now()}`
-    );
+    const { ok, data } = await CW.api('GET', `/recommend/problems?limit=${limit}`);
 
     if (!ok) {
-      const msg = (data && data.error) ? escHtml(data.error) : 'Failed to load recommendations.';
-      container.innerHTML = `<p style="color:var(--red);">${msg}${status === 429 ? ' Try again later.' : ''}</p>`;
+      container.innerHTML = '<p style="color:var(--red);">Failed to load recommendations.</p>';
       return;
     }
 
@@ -89,27 +79,27 @@
       container.innerHTML = `
         <div class="empty-state">
           <h3>No recommendations available</h3>
-          <p>You may have seen all problems in the bank — try pasting a new one on Solve!</p>
+          <p>Solve more problems to get personalized suggestions!</p>
           <a href="/solve" class="btn btn-primary" style="margin-top:1rem;">Start solving</a>
         </div>`;
       return;
     }
 
     const cards = recs.map(p => {
-      const tags = (p.tags || []).map(t => `<span class="badge badge-tag">${escHtml(t)}</span>`).join('');
-      const preview = escHtml(p.statement_preview || '');
-      const prefill = escAttr(p.statement_preview || p.title || '');
+      const tags = (p.tags || []).map(t => `<span class="badge badge-tag">${t}</span>`).join('');
+      const preview = (p.statement_preview || '').replace(/</g,'&lt;');
+      const encodedStmt = encodeURIComponent(p.statement_preview || p.title || '');
       return `
         <div class="problem-card">
           <div class="problem-header">
-            <span class="problem-title">${escHtml(p.title || 'Untitled')}</span>
+            <span class="problem-title">${p.title || 'Untitled'}</span>
             ${diffBadge(p.difficulty)}
           </div>
           <div class="problem-tags">${tags}</div>
           ${preview ? `<div class="problem-preview">${preview}</div>` : ''}
           <div class="problem-footer">
-            <span class="problem-source">${escHtml(p.source || '')}</span>
-            <button type="button" class="btn btn-primary btn-sm btn-solve" data-prefill="${prefill}">
+            <span class="problem-source">${p.source || ''}</span>
+            <button class="btn btn-primary btn-sm" onclick="solveProblem(this, '${p.problem_id}', \`${(p.statement_preview||p.title||'').replace(/`/g,"'")}\`)">
               ▶ Solve
             </button>
           </div>
@@ -119,15 +109,12 @@
     container.innerHTML = `<div class="problem-grid">${cards}</div>`;
   }
 
-  document.getElementById('problems-container').addEventListener('click', (e) => {
-    const btn = e.target.closest('.btn-solve');
-    if (!btn) return;
-    sessionStorage.setItem('cw_prefill', btn.getAttribute('data-prefill') || '');
+  function solveProblem(btn, problemId, text) {
+    // Pre-fill the solve page textarea via sessionStorage and navigate
+    sessionStorage.setItem('cw_prefill', text);
     window.location.href = '/solve';
-  });
-
-  if (CW.requireAuth()) {
-    loadRecommendations();
   }
+
+  loadRecommendations();
 </script>
 {% endblock %}

@@ -16,7 +16,6 @@ from flask import abort
 
 from app.extensions import db
 from app.models.session import UserProblemSession
-from app.utils.problem_tags import tags_for_session
 
 logger = logging.getLogger(__name__)
 
@@ -206,9 +205,8 @@ class ProgressTrackerService:
         )
         tag_counter = Counter()
         for s in sessions:
-            session_tags = tags_for_session(s)
-            if session_tags:
-                tag_counter.update(session_tags)
+            if s.problem and s.problem.tags:
+                tag_counter.update(s.problem.tags)
 
         return [
             {"tag": tag, "count": count}
@@ -243,7 +241,6 @@ class ProgressTrackerService:
         """Collect tags from linked problems and return the top N."""
         tag_counter: Counter = Counter()
         for s in sessions:
-            session_tags = tags_for_session(s)
-            if session_tags:
-                tag_counter.update(session_tags)
+            if s.problem and s.problem.tags:
+                tag_counter.update(s.problem.tags)
         return [tag for tag, _ in tag_counter.most_common(top_n)]

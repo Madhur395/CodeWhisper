@@ -1,34 +1,39 @@
 """
 CodeWhisper — Flask Application Factory
-Creates and fully configures the Flask app instance.
-
-Phase 7: Rate limiting (Flask-Limiter) wired in.
+Production-hardened: absolute paths, DATABASE_URL fix, graceful startup.
 """
 
 import os
+import logging
 from flask import Flask, jsonify
 from app.config import get_config
 from app.extensions import db, migrate, jwt, cors, limiter
 
+# Base directory of the project (one level above this package)
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+logger = logging.getLogger(__name__)
+
 
 def create_app(config=None):
-    """
-    Application factory — creates a configured Flask app instance.
-
-    Args:
-        config: Optional config class override (useful in tests).
-
-    Returns:
-        Configured Flask application.
-    """
-    app = Flask(__name__, template_folder="../templates", static_folder="../static")
+    app = Flask(
+        __name__,
+        template_folder=os.path.join(BASE_DIR, "templates"),  # absolute path
+        static_folder=os.path.join(BASE_DIR, "static"),       # absolute path
+    )
 
     # ── Load Configuration ────────────────────────────────────────────────────
     cfg = config if config is not None else get_config()
     app.config.from_object(cfg)
 
-    # Flask-Limiter: always use memory:// so startup never fails.
-    # In production with Redis, change to the REDIS_URL value.
+    # ── Fix Render's postgres:// → postgresql:// ──────────────────────────────
+    db_url = app.config.get("SQLALCHEMY_DATABASE_URI") or ""
+    if db_url.startswith("postgres://"):
+        app.config["SQLALCHEMY_DATABASE_URI"] = db_url.replace(
+            "postgres://", "postgresql://", 1
+        )
+
+    # ── Rate limiter storage (memory:// is safe on all platforms) ─────────────
     app.config.setdefault("RATELIMIT_STORAGE_URI", "memory://")
     app.config["RATELIMIT_ENABLED"] = True
 
@@ -53,7 +58,7 @@ def create_app(config=None):
     app.register_blueprint(hints_bp,     url_prefix="/hints")
     app.register_blueprint(progress_bp,  url_prefix="/progress")
     app.register_blueprint(recommend_bp, url_prefix="/recommend")
-    app.register_blueprint(ui_bp)          # No prefix — serves at root /
+    app.register_blueprint(ui_bp)
 
     # ── Global Error Handlers ─────────────────────────────────────────────────
 
@@ -72,23 +77,19 @@ def create_app(config=None):
     @app.errorhandler(429)
     def rate_limited(e):
         return jsonify({
-            "error": "Rate limit exceeded. Please slow down and try again later.",
+            "error": "Rate limit exceeded. Please try again later.",
             "retry_after": getattr(e, "retry_after", None),
         }), 429
 
     @app.errorhandler(500)
     def server_error(e):
+        logger.error("Internal server error: %s", e, exc_info=True)
         return jsonify({"error": "Internal server error."}), 500
 
     # ── Health Check ──────────────────────────────────────────────────────────
 
     @app.route("/health", methods=["GET"])
     def health():
-        """Lightweight liveness probe — no auth required."""
-        return jsonify({
-            "status":  "ok",
-            "app":     "CodeWhisper",
-            "version": "1.0.0",
-        }), 200
+        return jsonify({"status": "ok", "app": "CodeWhisper", "version": "1.0.0"}), 200
 
     return app

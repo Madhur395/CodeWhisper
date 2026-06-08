@@ -14,31 +14,15 @@ Pages:
     GET /recommend  — Problem recommendations
 """
 
-import os
-
-from flask import Blueprint, redirect, render_template, send_from_directory
+from flask import Blueprint, render_template
 
 ui_bp = Blueprint("ui", __name__)
-
-_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
 @ui_bp.route("/")
 def index():
     """Landing / Login page."""
     return render_template("login.html")
-
-
-@ui_bp.route("/CodeWhisper.html")
-def legacy_standalone_html():
-    """Redirect old standalone file to the integrated app (no localhost API bar)."""
-    return redirect("/")
-
-
-@ui_bp.route("/app")
-def spa_shell():
-    """Optional entry: serve the all-in-one page from the same host (same-origin API)."""
-    return send_from_directory(_PROJECT_ROOT, "CodeWhisper.html")
 
 
 @ui_bp.route("/register")

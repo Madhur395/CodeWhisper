@@ -332,27 +332,16 @@ class TestRecommenderServiceUnit:
             result = RecommenderService().recommend(str(sample_user.id), limit=3)
         assert len(result) <= 3
 
-    def test_recommend_excludes_solved_problems(self, app, db, sample_user):
+    def test_recommend_excludes_attempted_problems(self, app, db, sample_user):
         from app.services.recommender import RecommenderService
         with app.app_context():
-            p_solved = make_problem(db, "Solved")
-            p_unseen = make_problem(db, "Unseen")
-            make_session(db, sample_user, p_solved, is_solved=True,
-                         solved_at=datetime.now(timezone.utc))
+            p_attempted = make_problem(db, "Attempted")
+            p_unseen    = make_problem(db, "Unseen")
+            make_session(db, sample_user, p_attempted)
             result = RecommenderService().recommend(str(sample_user.id))
         result_ids = [r["problem_id"] for r in result]
-        assert str(p_solved.id) not in result_ids
-        assert str(p_unseen.id) in result_ids
-
-    def test_recommend_includes_in_progress_attempts(self, app, db, sample_user):
-        """Hint sessions without solve still appear in Discover."""
-        from app.services.recommender import RecommenderService
-        with app.app_context():
-            p_in_progress = make_problem(db, "In Progress")
-            make_session(db, sample_user, p_in_progress, is_solved=False)
-            result = RecommenderService().recommend(str(sample_user.id))
-        result_ids = [r["problem_id"] for r in result]
-        assert str(p_in_progress.id) in result_ids
+        assert str(p_attempted.id) not in result_ids
+        assert str(p_unseen.id)    in result_ids
 
     def test_recommend_card_has_required_fields(self, app, db, sample_user):
         from app.services.recommender import RecommenderService
@@ -400,17 +389,17 @@ class TestRecommenderServiceUnit:
             result = RecommenderService().recommend(str(sample_user.id), limit=999)
         assert len(result) <= 20
 
-    def test_recommend_excludes_only_solved_from_pool(self, app, db, sample_user):
+    def test_recommend_all_results_are_unseen(self, app, db, sample_user):
         from app.services.recommender import RecommenderService
         with app.app_context():
-            solved = [make_problem(db, f"Sol {i}") for i in range(3)]
-            for p in solved:
-                make_session(db, sample_user, p, is_solved=True,
-                             solved_at=datetime.now(timezone.utc))
+            attempted = [make_problem(db, f"Att {i}") for i in range(3)]
+            unseen    = [make_problem(db, f"Uns {i}") for i in range(4)]
+            for p in attempted:
+                make_session(db, sample_user, p)
             result = RecommenderService().recommend(str(sample_user.id))
-        solved_ids = {str(p.id) for p in solved}
+        attempted_ids = {str(p.id) for p in attempted}
         for card in result:
-            assert card["problem_id"] not in solved_ids
+            assert card["problem_id"] not in attempted_ids
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -619,26 +608,28 @@ class TestRecommendEndpoint:
         for field in ["problem_id", "title", "difficulty", "tags", "source"]:
             assert field in card
 
-    def test_recommend_excludes_user_solved(self, client, db):
-        """Problems the user marked solved don't appear in recommendations."""
+    def test_recommend_excludes_user_attempted(self, client, db):
+        """Problems linked to a user session (via problem_id) don't appear in recs."""
         from app.models.user import User
-        from datetime import datetime, timezone
+        from app.utils.validators import hash_password
 
         token = register_and_login(client)
 
-        p_solved = make_problem(db, "Rec Excl Solved")
-        _p_unseen = make_problem(db, "Rec Excl Unseen")
+        # Create problems in DB
+        p_attempted = make_problem(db, "Rec Excl Attempted")
+        _p_unseen   = make_problem(db, "Rec Excl Unseen")
 
+        # Find the user just registered
         resp = client.get("/auth/me", headers=auth_headers(token))
         user_id = resp.get_json()["user"]["id"]
         user = User.query.filter_by(id=uuid.UUID(user_id)).first()
 
-        make_session(db, user, p_solved, is_solved=True,
-                     solved_at=datetime.now(timezone.utc))
+        # Create a session explicitly linked to the problem
+        make_session(db, user, p_attempted)
 
         body = client.get("/recommend/problems", headers=auth_headers(token)).get_json()
         rec_ids = [r["problem_id"] for r in body["recommendations"]]
-        assert str(p_solved.id) not in rec_ids
+        assert str(p_attempted.id) not in rec_ids
 
 
 # ══════════════════════════════════════════════════════════════════════════════

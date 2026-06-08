@@ -109,17 +109,7 @@ def cache_hints(problem_hash: str, hints: list) -> None:
 
 def get_cached_hints(problem_hash: str):
     raw = _get(f"hints:{problem_hash}")
-    if not raw:
-        return None
-    try:
-        hints = json.loads(raw)
-    except json.JSONDecodeError:
-        _delete(f"hints:{problem_hash}")
-        return None
-    if not isinstance(hints, list) or len(hints) < 5:
-        _delete(f"hints:{problem_hash}")
-        return None
-    return hints
+    return json.loads(raw) if raw else None
 
 
 # ── Session Hint Index ────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 """
 CodeWhisper — Application Configuration
-Production-hardened: all env vars, DATABASE_URL auto-fix, safe defaults.
+Production-hardened with PostgreSQL + SQLite fallback.
 """
 
 import os
@@ -11,27 +11,32 @@ load_dotenv()
 
 def _db_url():
     """Return DATABASE_URL, fixing postgres:// → postgresql:// for Render."""
-    url = os.getenv("DATABASE_URL", "")
+    url = os.getenv("DATABASE_URL", "").strip()
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
-    return url or None
+    if url:
+        return url
+    # Fallback to SQLite when no DATABASE_URL is set (works on Render free tier too)
+    base = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    sqlite_path = os.path.join(base, "codewhisper_prod.db")
+    return f"sqlite:///{sqlite_path}"
 
 
 class Config:
     # Flask
-    SECRET_KEY  = os.getenv("SECRET_KEY", "dev-fallback-CHANGE-IN-PROD")
+    SECRET_KEY  = os.getenv("SECRET_KEY", "dev-fallback-CHANGE-IN-PROD-" + "x"*20)
     FLASK_ENV   = os.getenv("FLASK_ENV", "production")
 
-    # Database
+    # Database — PostgreSQL if set, SQLite fallback
     SQLALCHEMY_DATABASE_URI    = _db_url()
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ECHO            = False
 
-    # Redis (optional — falls back to in-memory if unavailable)
+    # Redis (optional)
     REDIS_URL = os.getenv("REDIS_URL", "")
 
     # JWT
-    JWT_SECRET_KEY           = os.getenv("JWT_SECRET_KEY", "jwt-fallback-CHANGE-IN-PROD")
+    JWT_SECRET_KEY           = os.getenv("JWT_SECRET_KEY", "jwt-fallback-CHANGE-IN-PROD-" + "y"*20)
     JWT_ACCESS_TOKEN_EXPIRES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRES", 3600))
     JWT_TOKEN_LOCATION       = ["headers"]
     JWT_HEADER_NAME          = "Authorization"
@@ -58,25 +63,22 @@ class DevelopmentConfig(Config):
 class ProductionConfig(Config):
     DEBUG = False
     FLASK_ENV = "production"
-    # Stricter settings in production
-    SQLALCHEMY_ECHO = False
 
 
 class StandaloneConfig(Config):
-    """SQLite + in-memory fallbacks for local dev without Docker."""
+    """SQLite + in-memory for local dev without Docker."""
     DEBUG = True
     FLASK_ENV = "development"
 
-    @classmethod
-    def _sqlite_path(cls):
+    @staticmethod
+    def _sqlite_path():
         base = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         return f"sqlite:///{base}/codewhisper_dev.db"
 
-    SQLALCHEMY_DATABASE_URI = None   # set after class in __init_subclass__ below
+    SQLALCHEMY_DATABASE_URI = None
     RATELIMIT_STORAGE_URI   = "memory://"
 
 
-# Fix: set SQLite URI after class is defined (avoids class-level import side effects)
 StandaloneConfig.SQLALCHEMY_DATABASE_URI = StandaloneConfig._sqlite_path()
 
 

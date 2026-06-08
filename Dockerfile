@@ -7,23 +7,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc libpq-dev curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy everything
+# Copy requirements first (at root level for layer caching)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy all project files
 COPY . .
 
-# Install from the codewhisper subfolder
-RUN pip install --no-cache-dir -r codewhisper/requirements.txt
-
-# Set env
+# Production environment
 ENV FLASK_ENV=production
-ENV FLASK_APP=codewhisper/run.py
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
+# Change into the app subfolder
 WORKDIR /app/codewhisper
 
 EXPOSE 5000
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
   CMD curl -f http://localhost:5000/health || exit 1
 
 CMD ["gunicorn", "run:app", \

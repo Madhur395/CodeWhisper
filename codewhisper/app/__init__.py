@@ -60,6 +60,13 @@ def create_app(config=None):
     app.register_blueprint(recommend_bp, url_prefix="/recommend")
     app.register_blueprint(ui_bp)
 
+    # Debug route (temporary)
+    try:
+        from app.debug_route import debug_bp
+        app.register_blueprint(debug_bp)
+    except Exception:
+        pass
+
     # ── Global Error Handlers ─────────────────────────────────────────────────
 
     @app.errorhandler(400)

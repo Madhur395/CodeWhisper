@@ -7,5 +7,4 @@ COPY . .
 EXPOSE 5000
 ENV FLASK_APP=run.py
 ENV FLASK_ENV=production
-ENTRYPOINT ["sh", "-c"]
 CMD ["gunicorn", "--bind", "0.0.0.0:5000", "wsgi:app"]

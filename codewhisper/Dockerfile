@@ -8,4 +8,4 @@ EXPOSE 5000
 ENV FLASK_APP=run.py
 ENV FLASK_ENV=production
 ENTRYPOINT ["sh", "-c"]
-CMD ["flask db upgrade && python run.py"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "wsgi:app"]

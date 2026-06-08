@@ -4,7 +4,7 @@ from flask import Blueprint, jsonify, request
 
 debug_bp = Blueprint("debug", __name__)
 
-CODE_VERSION = "final-v3-db-hint-index"
+CODE_VERSION = "final-v4-concepts-fixed"
 
 @debug_bp.route("/api/status")
 def status():

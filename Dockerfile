@@ -2,36 +2,34 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# System dependencies
+# System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc libpq-dev curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy and install requirements first (layer cache)
+# Install requirements (root-level copy for layer cache)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy all project files
+# Copy all files
 COPY . .
 
-# Production environment
+# Make startup script executable
+RUN chmod +x /app/codewhisper/start.sh
+
+# Env
 ENV FLASK_ENV=production
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
+ENV FLASK_APP=run.py
 
-# Work inside the app subfolder
+# Work from inside the app folder
 WORKDIR /app/codewhisper
 
 EXPOSE 5000
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD curl -f http://localhost:5000/health || exit 1
 
-# Shell form so && works. run.py auto-runs migrations + seeding.
-CMD gunicorn run:app \
-    --bind 0.0.0.0:$PORT \
-    --workers 2 \
-    --timeout 120 \
-    --log-level info \
-    --access-logfile - \
-    --error-logfile -
+# Single entrypoint — no && needed
+CMD ["/app/codewhisper/start.sh"]

@@ -240,6 +240,15 @@
       const opts = { method, headers: CW.authHeaders() };
       if (body) opts.body = JSON.stringify(body);
       const resp = await fetch(path, opts);
+      // Auto-logout on 401 (expired token) — except for login/register calls
+      if (resp.status === 401 && !path.includes('/auth/login') && !path.includes('/auth/register')) {
+        const authPaths = ['/auth/login', '/auth/register'];
+        if (!authPaths.some(p => path.includes(p))) {
+          CW.clearAuth();
+          window.location.href = '/';
+          return { ok: false, status: 401, data: {} };
+        }
+      }
       const data = await resp.json();
       return { ok: resp.ok, status: resp.status, data };
     },

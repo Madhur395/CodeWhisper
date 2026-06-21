@@ -1,8 +1,7 @@
 """
 CodeWhisper — Production Entry Point
-run.py: used by gunicorn as  gunicorn run:app
-- auto-creates DB tables on startup
-- auto-seeds problem bank if empty
+Gunicorn: gunicorn run:app
+Auto-initialises DB tables and seeds problem bank on startup.
 """
 
 import os
@@ -21,27 +20,49 @@ app = create_app()
 
 
 def _init_db():
-    """Create tables and seed problems. Called once on first request."""
+    """Create all DB tables and seed problems. Safe to call multiple times."""
     with app.app_context():
-        try:
-            from app.extensions import db
-            db.create_all()
-            logger.info("✅ DB tables ready")
-        except Exception as e:
-            logger.error("❌ DB init error: %s", e)
+        from app.extensions import db
 
+        # Log which DB we're using
+        db_url = str(app.config.get("SQLALCHEMY_DATABASE_URI", ""))
+        if "postgresql" in db_url or "postgres" in db_url:
+            logger.info("📦 Using PostgreSQL (persistent)")
+        elif "sqlite" in db_url:
+            logger.warning("⚠️  Using SQLite — data will be lost on restart! Set DATABASE_URL.")
+        else:
+            logger.info("📦 DB: %s", db_url[:30])
+
+        # Try flask db upgrade first (uses Alembic migrations)
+        try:
+            from flask_migrate import upgrade
+            upgrade()
+            logger.info("✅ Migrations applied (flask db upgrade)")
+        except Exception as e:
+            logger.warning("Migration failed (%s) — falling back to create_all()", e)
+            try:
+                db.create_all()
+                logger.info("✅ DB tables created via create_all()")
+            except Exception as e2:
+                logger.error("❌ DB init failed: %s", e2)
+                return
+
+        # Seed problem bank if empty
         try:
             from app.models.problem import Problem
-            if Problem.query.count() == 0:
+            count = Problem.query.count()
+            if count == 0:
                 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
                 from scripts.seed_problems import seed
                 n = seed(verbose=False, app=app)
-                logger.info("✅ Seeded %d problems", n)
+                logger.info("✅ Seeded %d problems into problem bank", n)
+            else:
+                logger.info("ℹ️  Problem bank: %d problems already exist", count)
         except Exception as e:
-            logger.warning("⚠️  Seed skipped: %s", e)
+            logger.warning("⚠️  Could not seed problems: %s", e)
 
 
-# Run on startup (gunicorn imports this module once per worker)
+# Run on startup (once per gunicorn worker process)
 _init_db()
 
 

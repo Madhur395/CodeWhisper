@@ -17,3 +17,13 @@ services:
         value: llama-3.3-70b-versatile
       - key: CORS_ORIGINS
         value: "*"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: codewhisper-db
+          property: connectionString
+
+databases:
+  - name: codewhisper-db
+    databaseName: codewhisper
+    user: codewhisper
+    plan: free

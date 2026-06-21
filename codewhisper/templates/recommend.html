@@ -48,15 +48,28 @@
 
 {% block scripts %}
 <script>
-  if (!CW.requireAuth()) { /* redirected to login */ }
+  // Redirect to login if not logged in
+  if (!CW.isLoggedIn()) {
+    window.location.href = '/';
+  }
+
+  function esc(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
 
   function diffBadge(d) {
     if (!d) return '';
     const cls = d.toLowerCase();
-    return `<span class="badge badge-${cls}">${d}</span>`;
+    return `<span class="badge badge-${cls}">${esc(d)}</span>`;
   }
 
   async function loadRecommendations() {
+    // Re-check auth each time (token may have expired)
+    if (!CW.isLoggedIn()) {
+      window.location.href = '/';
+      return;
+    }
+
     const limit = document.getElementById('limit-select').value;
     const container = document.getElementById('problems-container');
     container.innerHTML = '<div class="loading-state"><span class="spinner"></span> Loading…</div>';
@@ -64,10 +77,20 @@
     try {
       const { ok, status, data } = await CW.api('GET', `/recommend/problems?limit=${limit}`);
 
+      // 401 = token expired → redirect to login
+      if (status === 401) {
+        CW.clearAuth();
+        window.location.href = '/';
+        return;
+      }
+
       if (!ok) {
-        container.innerHTML = `<div class="empty-state"><p style="color:var(--red)">
-          Failed to load (${status}). <button class="btn btn-secondary btn-sm" onclick="loadRecommendations()">Retry</button>
-        </p></div>`;
+        container.innerHTML = `
+          <div class="empty-state">
+            <h3>Could not load recommendations</h3>
+            <p style="color:var(--text-muted);margin-bottom:1rem">Error ${status}</p>
+            <button class="btn btn-primary btn-sm" onclick="loadRecommendations()">🔄 Try Again</button>
+          </div>`;
         return;
       }
 
@@ -77,7 +100,7 @@
         container.innerHTML = `
           <div class="empty-state">
             <h3>No recommendations yet</h3>
-            <p>Solve a few problems and we'll suggest similar ones!</p>
+            <p>Solve a few problems first and we'll personalise your suggestions!</p>
             <a href="/solve" class="btn btn-primary" style="margin-top:1rem;">Start Solving</a>
           </div>`;
         return;
@@ -86,7 +109,7 @@
       const cards = recs.map(p => {
         const tags    = (p.tags || []).map(t => `<span class="badge badge-tag">${esc(t)}</span>`).join('');
         const preview = esc(p.statement_preview || '');
-        const stmt    = (p.statement_preview || p.title || '').replace(/`/g,"'").replace(/\n/g,' ');
+        const stmt    = (p.statement_preview || p.title || '').replace(/`/g, "'").replace(/\n/g, ' ');
         return `
           <div class="problem-card">
             <div class="problem-header">
@@ -106,9 +129,12 @@
       container.innerHTML = `<div class="problem-grid">${cards}</div>`;
 
     } catch (err) {
-      container.innerHTML = `<div class="empty-state">
-        <p style="color:var(--red)">Network error. <button class="btn btn-secondary btn-sm" onclick="loadRecommendations()">Retry</button></p>
-      </div>`;
+      container.innerHTML = `
+        <div class="empty-state">
+          <h3>Network error</h3>
+          <p style="margin-bottom:1rem">Check your connection and try again.</p>
+          <button class="btn btn-primary btn-sm" onclick="loadRecommendations()">🔄 Retry</button>
+        </div>`;
       console.error('Recommend error:', err);
     }
   }
@@ -118,11 +144,7 @@
     window.location.href = '/solve';
   }
 
-  function esc(s) {
-    return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  }
-
-  // Auto-load on page ready
+  // Load on page ready
   loadRecommendations();
 </script>
 {% endblock %}

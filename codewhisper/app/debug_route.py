@@ -4,7 +4,7 @@ from flask import Blueprint, jsonify, request
 
 debug_bp = Blueprint("debug", __name__)
 
-CODE_VERSION = "final-v4-concepts-fixed"
+CODE_VERSION = "final-v5-postgresql"
 
 @debug_bp.route("/api/status")
 def status():
